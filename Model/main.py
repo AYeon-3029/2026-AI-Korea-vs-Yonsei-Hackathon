@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v3.
+"""깃발 대항전 전략 봇 v5.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -11,6 +11,9 @@
 5. 전투병(W)은 적 깃발병의 다음 목표 건물을 예측해 적보다 먼저(또는 동시에) 도착하도록
    보내고, 점령 중인 아군 F 엄호, 위협받는 건물 경계, 남는 인원은 공성(적 건물·생산 거점 포위).
 6. 정찰병은 쓰지 않는다.
+7. v5: 위협 지도 보정(적 생산 자원은 공용 예산·적 TELE 반영), 점령 예비비를 F 수로 제한,
+   군비 경쟁을 국지 기준으로 판단, 동거리 타이브레이크를 목적 있는 기준(위험·엄호·중앙)으로
+   바꾸고 남는 동률은 진영 대칭으로 깨 미러전이 대칭이 되게 한다.
 """
 import json
 import os
@@ -31,11 +34,11 @@ TELE_MIN_ST = CFG["tele"]["min_stations"]
 P = {
     "center_expect": 3.0,      # 중앙 건물 미공개 점수 기댓값(2~4)
     "side_expect": 1.5,        # 신촌·안암 건물 미공개 점수 기댓값(1~2)
-    "hall_bonus": 2.5,         # 학생회관 기능 가치(남은 턴 비율을 곱함)
+    "hall_bonus": 5.0,         # 학생회관 기능 가치(남은 턴 비율을 곱함). v4 2.5 → 탐색 결과 5.0
     "depot_bonus": 3.0,        # 아직 받지 않은 보급소 보너스 가치
     "hosp_bonus": 1.0,         # 병원 전진 생산 가치(남은 턴 비율을 곱함)
-    "eng_bonus": 0.5,
-    "lib_bonus": 0.5,
+    "eng_bonus": 5.0,          # 공학관: W 비용 3→2 는 군비 상시 할인. v4 0.5 → 5.0
+    "lib_bonus": 2.0,          # 도서관: 점령 비용 −1. v4 0.5 → 2.0
     "watch_bonus": 0.2,
     "station_scale": 0.0,      # 역 가치 = 맵 분석 단축 칸수 합 × scale (실험 결과 0.08은 역효과)
     "station_cap": 4.0,
@@ -44,15 +47,15 @@ P = {
     "deny": {"ENG": 2.0, "LIBRARY": 1.5, "HALL": 2.0, "HOSPITAL": 1.0},
     "enemy_owned_mult": 1.3,   # 적 건물은 빼앗으면 상대 점수도 줄어든다
     "enemy_f_penalty": 0.3,    # 적 깃발병이 서 있는 건물(경합) 감점
-    "dist_offset": 2.0,        # 가치 / (거리 + offset)
-    "max_f": 7,                # 동시에 유지할 깃발병 상한
+    "dist_offset": 5.0,        # 가치 / (거리 + offset). v4 2.0 → 5.0 (가까운 목표 편중 완화)
+    "max_f": 12,               # 동시에 유지할 깃발병 상한. v4 7 → 12 (점령 처리량이 병목)
     "min_f": 3,                # 전투병보다 먼저 확보할 깃발병 수
     "min_w": 2,                # 3턴 이후 최소 전투병 수
-    "w_margin": 1,             # 적 전투병 총수 대비 여유분
+    "w_margin": 12,            # 적 전투병 총수 대비 여유분. v4 1 → 12
     "escort_radius": 2,        # 적 F 호위 전투병으로 볼 거리
     "predict_top": 2,          # 적 F 목표 후보 수(가까운 순)
     "late_penalty": 0.5,       # 제때 도착 못 하는 요격 가치 배율
-    "guard_radius": 4,         # 적 유닛이 이 거리 안에 있는 아군 건물만 경계
+    "guard_radius": 9,         # 적 유닛이 이 거리 안에 있는 아군 건물만 경계. v4 4 → 9
     "siege_bld_bonus": 5.0,    # 공성 우선순위: 적 소유 건물
     "siege_ring_value": 2.0,   # 공성 우선순위: 적 생산 거점 둘레 칸
     "tele_min_gain": 2,        # TELE 가 일반 이동보다 이만큼 이상 가까워야 사용
@@ -63,6 +66,17 @@ P = {
     "pred_chase": True,        # 예측 요격과 별도로 현재 위치 추격 작업 추가
     "chase_mult": 0.8,         # 추격 작업 가치 = 가장 가까운 목표 가치 × chase_mult
     "pred_mult": 1.0,          # 예측(선점) 작업 가치 배율
+    # --- v5 스위치 (all / False / 1.0 이면 v4 동작) ---
+    "spawn_threat_mode": "all",    # 적 생산 가능 W 를 위협에 넣는 방식 all|split|half|off (실측 무차)
+    "tele_threat": False,          # 적 역 TELE 위협 반영 (실측 역효과 −0.05 → 끔)
+    "enf_count_fix": True,         # des_W 의 적 F 수를 칸 수(v4 버그) 대신 인원으로
+    "reserve_by_f": True,          # 점령 예비비를 아군 F 수만큼의 건물로 제한
+    "local_w": False,              # 군비 기준을 내 구역 근방 적 W 로 (실측 역효과 → 끔)
+    "local_w_radius": 6,           # 내 건물·유닛에서 이 거리 안의 적 W 를 센다
+    "local_w_floor": 0.5,          # 그래도 적 W 총수의 이 비율만큼은 유지
+    "sym_tiebreak": True,          # 남는 동률을 진영 대칭으로 깨기(미러전 = 무승부)
+    "smart_step": "w",             # 동거리 후보 선택 기준 적용 대상 off|f|w|both (F 는 역효과)
+    "f_center_pull": True,         # F 동거리 후보에서 중앙에 가까운 칸을 선호
 }
 
 # 로컬 실험용: BOT_PARAMS='{"min_f": 0}' 처럼 파라미터를 덮어쓴다(제출 환경에서는 미설정)
@@ -78,16 +92,26 @@ class Geo:
     def __init__(self, init):
         self.w, self.h = init.width, init.height
         n = self.w * self.h
+        self.n = n
+        # 맵은 (7,7) 점대칭이다. 이웃 순서가 U·D·L·R 로 고정이면 양 팀이 똑같이 "위쪽 먼저"를
+        # 선호해 미러전이 비대칭해진다. K 진영은 180° 회전한 순서를 써서 동률을 대칭으로 깬다.
+        self.flip = bool(P["sym_tiebreak"]) and init.team == "K"
+        order = ("D", "U", "R", "L") if self.flip else tuple(DIRS)
         self.passable = [init.passable(i % self.w, i // self.w) for i in range(n)]
         self.nbrs = [[] for _ in range(n)]
         for i in range(n):
             if not self.passable[i]:
                 continue
             x, y = i % self.w, i // self.w
-            for d, (dx, dy) in DIRS.items():
+            for d in order:
+                dx, dy = DIRS[d]
                 if init.passable(x + dx, y + dy):
                     self.nbrs[i].append((d, (y + dy) * self.w + x + dx))
         self.dist = [self._bfs(i) if self.passable[i] else None for i in range(n)]
+
+    def nkey(self, i):
+        """내 본진 기준으로 정규화한 셀 순서(180° 회전 대칭). 동률 판정용."""
+        return self.n - 1 - i if self.flip else i
 
     def _bfs(self, s):
         d = [INF] * (self.w * self.h)
@@ -240,7 +264,7 @@ def decide(view, init):
     base_opp = geo.idx(*init.bases[opp])
     spawn_me = [base_me] + owned(me, "HOSPITAL")
     spawn_opp = [base_opp] + owned(opp, "HOSPITAL")
-    my_stations = owned(me, "STATION")
+    my_stations = sorted(owned(me, "STATION"), key=geo.nkey)
     can_tele = P["use_tele"] and len(my_stations) >= TELE_MIN_ST
 
     # 3. 위협 지도: 다음 턴 각 칸에 도달 가능한 적 전투병 수(생산 가능분 포함)
@@ -248,13 +272,28 @@ def decide(view, init):
     for i, c in enW.items():
         for j in geo.near(i):
             threat[j] += c
+    # 적 자원으로 즉시 뽑을 수 있는 W. 자원은 한 번만 쓸 수 있는 공용 예산이므로 거점마다
+    # 전액을 더하면(v4) 적 본진·병원 둘레가 항상 위험으로 보여 F 가 끝까지 진입하지 못한다.
     opp_spawnable = view.opp_resource // w_cost(opp)
+    mode = P["spawn_threat_mode"]
+    if mode == "off":
+        opp_spawnable = 0
+    elif mode == "half":
+        opp_spawnable //= 2
+    elif mode == "split":
+        opp_spawnable //= len(spawn_opp)
     if opp_spawnable:
         cells = set()
         for s in spawn_opp:
             cells.update(geo.near(s))
         for j in cells:
             threat[j] += opp_spawnable
+    # 적도 TELE 를 쓴다. 적 역에 있는 W 는 다음 턴 다른 적 역에 그대로 나타날 수 있어,
+    # 적 역을 중립화하려고 올려둔 아군 F 가 저격당한다.
+    opp_st = owned(opp, "STATION")
+    if P["tele_threat"] and len(opp_st) >= TELE_MIN_ST:
+        for b in opp_st:
+            threat[b] += min(TELE_MAX, sum(enW.get(a, 0) for a in opp_st if a != b))
 
     commands = []
 
@@ -277,7 +316,11 @@ def decide(view, init):
         for j in geo.near(i):
             if j in bld and bld[j]["owner"] != me:
                 reachable.add(j)
-    reserve = max(0, sum(cap_cost(bld[j]) for j in reachable) - income)
+    # F 한 명은 한 건물에만 올라갈 수 있으므로 인접 건물을 모두 세면(v4) 예비비가 과다해진다
+    costs = sorted((cap_cost(bld[j]) for j in reachable), reverse=True)
+    if P["reserve_by_f"]:
+        costs = costs[:sum(myF.values())]
+    reserve = max(0, sum(costs) - income)
     budget = max(0, view.my_resource - reserve)
 
     targets_all = [i for i, b in bld.items() if b["owner"] != me]
@@ -285,13 +328,24 @@ def decide(view, init):
     n_enW = sum(enW.values())
     des_F = min(P["max_f"], len(targets_all))
     min_F = min(P["min_f"], des_F)
-    des_W = max(P["min_w"] if view.turn > 3 else 0, n_enW + P["w_margin"], len(enF))
+    n_enF = sum(enF.values())
+    if P["local_w"]:
+        # 전투는 국지적 수 우위만 의미가 있다. 적 총수를 그대로 따라가면 상대가 내 생산
+        # 계획을 정하게 되므로, 내 건물·유닛 근방에 실제로 와 있는 적 W 를 기준으로 삼는다.
+        zone = list(myF) + [i for i, b in bld.items() if b["owner"] == me] + [base_me]
+        near_enW = sum(c for j, c in enW.items()
+                       if min((geo.dist[j][z] for z in zone), default=INF) <= P["local_w_radius"])
+        rival = max(near_enW, int(n_enW * P["local_w_floor"]))
+    else:
+        rival = n_enW
+    des_W = max(P["min_w"] if view.turn > 3 else 0, rival + P["w_margin"],
+                n_enF if P["enf_count_fix"] else len(enF))
     nF = nW = 0
     while True:
         wantW = n_myW + nW < des_W
         wantF = n_myF + nF < des_F
         needF = n_myF + nF < min_F          # 재점령 인력은 군비 경쟁보다 먼저
-        behind = n_myW + nW <= n_enW
+        behind = n_myW + nW <= rival
         if needF:
             if budget < F_COST:
                 break                        # 깃발병 비용을 모은다
@@ -317,7 +371,8 @@ def decide(view, init):
     def best_spawn(goals):
         if not goals:
             return base_me
-        return min(spawn_me, key=lambda s: (min(geo.dist[s][g] for g in goals), s != base_me))
+        return min(spawn_me,
+                   key=lambda s: (min(geo.dist[s][g] for g in goals), s != base_me, geo.nkey(s)))
 
     def emit_spawn(kind, n, cell, table):
         if n <= 0:
@@ -340,12 +395,33 @@ def decide(view, init):
         key = (i, kind, d)
         moves[key] = moves.get(key, 0) + n
 
-    def step_toward(i, goal, safe=None):
-        """goal 쪽 최단 경로 다음 (방향, 칸). safe 가 주어지면 안전한 칸을 우선한다."""
+    center = geo.idx(geo.w // 2, geo.h // 2)
+
+    def prefer_f(v):
+        """F 동거리 후보: 위험이 적고(필요하면) 중앙에 가까운 칸."""
+        if P["f_center_pull"]:
+            return (max(0, threat[v] - cover[v]), geo.dist[v][center], geo.nkey(v))
+        return (max(0, threat[v] - cover[v]), geo.nkey(v))
+
+    def prefer_w(v):
+        """W 동거리 후보: 아군 W 가 모이는 칸. 전투는 수가 전부이므로 뭉쳐 다닌다."""
+        return (-cover[v], geo.nkey(v))
+
+    def pref_of(kind):
+        m = P["smart_step"]
+        if kind == "F":
+            return prefer_f if m in ("both", "f") else None
+        return prefer_w if m in ("both", "w") else None
+
+    def step_toward(i, goal, safe=None, prefer=None):
+        """goal 쪽 최단 경로 다음 (방향, 칸). safe 가 주어지면 안전한 칸을 우선한다.
+        prefer 가 있으면 같은 거리의 후보 중 그 기준이 좋은 칸을 고른다."""
         if i == goal or geo.dist[i][goal] >= INF:
             return None
         cur = geo.dist[i][goal]
         options = [(d, v) for d, v in geo.nbrs[i] if geo.dist[v][goal] == cur - 1]
+        if prefer is not None and len(options) > 1:
+            options.sort(key=lambda dv: prefer(dv[1]))
         if safe is not None:
             good = [(d, v) for d, v in options if safe(v)]
             if good:
@@ -353,6 +429,8 @@ def decide(view, init):
             if safe(i):
                 return None          # 안전한 경로가 없으면 제자리 대기
             side = [(d, v) for d, v in geo.nbrs[i] if safe(v)]
+            if prefer is not None:
+                side.sort(key=lambda dv: prefer(dv[1]))
             return side[0] if side else (options[0] if options else None)
         return options[0] if options else None
 
@@ -383,7 +461,7 @@ def decide(view, init):
         return min(geo.dist[i][goal], r[0]) if r else geo.dist[i][goal]
 
     def walk(i, kind, n, goal, safe, out):
-        st = step_toward(i, goal, safe)
+        st = step_toward(i, goal, safe, pref_of(kind))
         if st is None:
             out.append((i, n))
         else:
@@ -424,13 +502,14 @@ def decide(view, init):
         """w_pool 에서 g 에 가까운 순으로 need 명을 보낸다.
         deadline 안에 도착할 수 있는 인원만으로 need 를 채울 수 있으면 그 인원만 쓴다.
         모인 인원이 need 에 못 미치면 stage_dist 칸 밖에서 대기하며 모은다."""
-        near_ws = sorted((eff_dist(i, g), i) for i, c in w_pool.items() if c > 0 and geo.dist[i][g] < INF)
-        timely = [(d, i) for d, i in near_ws if d <= deadline]
-        if deadline < INF and sum(w_pool[i] for _, i in timely) >= need:
+        near_ws = sorted((eff_dist(i, g), geo.nkey(i), i)
+                         for i, c in w_pool.items() if c > 0 and geo.dist[i][g] < INF)
+        timely = [t for t in near_ws if t[0] <= deadline]
+        if deadline < INF and sum(w_pool[t[2]] for t in timely) >= need:
             near_ws = timely
-        enough = sum(w_pool[i] for _, i in near_ws) >= need
+        enough = sum(w_pool[t[2]] for t in near_ws) >= need
         left = need
-        for d, i in near_ws:
+        for d, _, i in near_ws:
             if left <= 0:
                 break
             n = min(left, w_pool[i])
@@ -453,7 +532,7 @@ def decide(view, init):
             # v2 방식: 가장 가까운 비적 건물 + 현재 위치
             cands = [i for i, b in bld.items() if b["owner"] != opp and enF.get(i, 0) == 0]
             g = e if (e in bld and bld[e]["owner"] != opp) else (
-                min(cands, key=lambda i: geo.dist[e][i]) if cands else e)
+                min(cands, key=lambda i: (geo.dist[e][i], geo.nkey(i))) if cands else e)
             worth = 2.0 + (value(bld[g]) if g in bld else 0) + (1.0 if g in bld and bld[g]["owner"] == me else 0)
             jobs.append((worth, g, threat[g] + 1, INF, -1))
             if g != e:
@@ -467,7 +546,7 @@ def decide(view, init):
             jobs.append((worth, e, max(need, threat[e] + 1), INF, -1))
             continue
         cands = [i for i, b in bld.items() if b["owner"] != opp and enF.get(i, 0) == 0]
-        cands.sort(key=lambda i: geo.dist[e][i])
+        cands.sort(key=lambda i: (geo.dist[e][i], geo.nkey(i)))
         if P["pred_chase"] and cands:
             g0 = cands[0]
             chase = (2.0 + value(bld[g0]) + (1.0 if bld[g0]["owner"] == me else 0)) * P["chase_mult"]
@@ -485,7 +564,7 @@ def decide(view, init):
     for i, c in myF.items():
         if i in bld and bld[i]["owner"] != me and threat[i] > 0:
             jobs.append((value(bld[i]) + 3.0, i, threat[i] + 1, 1, INF))
-    jobs.sort(key=lambda j: -j[0])
+    jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
     done_goals = set()
     for worth, g, need, deadline, stage in jobs:
@@ -505,8 +584,8 @@ def decide(view, init):
             continue
         danger = min((geo.dist[p][e] for e in enemy_cells), default=INF)
         if danger <= P["guard_radius"]:
-            guard_posts.append((value(b), p))
-    for _, p in sorted(guard_posts, reverse=True):
+            guard_posts.append((-value(b), geo.nkey(p), p))
+    for _, _, p in sorted(guard_posts):
         if not any(c > 0 for c in w_pool.values()):
             break
         send_w(p, max(1, threat[p]), 0)
@@ -522,7 +601,7 @@ def decide(view, init):
     for c in ring:
         if c not in bld or bld[c]["owner"] != opp:
             siege.append((P["siege_ring_value"], c))
-    siege.sort(key=lambda t: (-t[0], t[1]))
+    siege.sort(key=lambda t: (-t[0], geo.nkey(t[1])))
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):
             break
@@ -531,7 +610,7 @@ def decide(view, init):
     # 그래도 남은 전투병은 가장 가치 높은 공성 목표에 합류
     if siege:
         top = siege[0][1]
-        for i in sorted(w_pool):
+        for i in sorted(w_pool, key=geo.nkey):
             if w_pool[i] > 0:
                 send_w(top, w_pool[i], -1)
 
@@ -561,20 +640,22 @@ def decide(view, init):
         targets[i] = v
 
     final_F = {i: 1 for i in holding}
-    free_units = list(f_units)
+    free_units = sorted(f_units, key=geo.nkey)
     while free_units and targets:
         best = None
+        order = sorted(targets, key=geo.nkey)
         for k, u in enumerate(free_units):
             du = geo.dist[u]
-            for t, v in targets.items():
+            for t in order:
                 d = du[t]
                 if d >= INF:
                     continue
                 if can_tele:
                     d = eff_dist(u, t)
-                s = v / (d + P["dist_offset"])
-                if best is None or s > best[0]:
-                    best = (s, k, t)
+                s = targets[t] / (d + P["dist_offset"])
+                key = (-s, geo.nkey(u), geo.nkey(t))
+                if best is None or key < best[0]:
+                    best = (key, k, t)
         if best is None:
             break
         _, k, t = best
@@ -587,20 +668,22 @@ def decide(view, init):
     for u in free_units:
         if not safe(u):
             side = [(d, v) for d, v in geo.nbrs[u] if safe(v)]
+            if pref_of("F") is not None:
+                side.sort(key=lambda dv: prefer_f(dv[1]))
             if side:
                 add_move(u, "F", 1, side[0][0])
                 continue
         final_F[u] = final_F.get(u, 0) + 1
 
     commands.extend(tele_cmds)
-    for (i, kind, d), n in moves.items():
+    for (i, kind, d), n in sorted(moves.items(), key=lambda kv: (geo.nkey(kv[0][0]), kv[0][1:])):
         x, y = geo.xy(i)
         commands.append(move(x, y, kind, n, d))
 
     # 8. 점령 우선순위: 이번 턴 깃발병이 올라갈 건물을 가치 순으로
     caps = [i for i in final_F if i in bld and bld[i]["owner"] != me]
     if caps:
-        caps.sort(key=lambda i: -value(bld[i]))
+        caps.sort(key=lambda i: (-value(bld[i]), geo.nkey(i)))
         commands.append(priority([geo.xy(i) for i in caps]))
     return commands
 

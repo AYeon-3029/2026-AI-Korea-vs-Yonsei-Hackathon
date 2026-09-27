@@ -6,8 +6,8 @@
 
 | 경로 | 내용 |
 |---|---|
-| `Model/main.py` | 현재 개발 중인 봇 (v9). 보조 모듈 `campus_bot.py`, `protocol.py`, `_generated.py` |
-| `Model/history/v1~v9/` | 버전별 스냅샷 (각 폴더 단독 실행 가능) |
+| `Model/main.py` | 현재 개발 중인 봇 (v10). 보조 모듈 `campus_bot.py`, `protocol.py`, `_generated.py` |
+| `Model/history/v1~v10/` | 버전별 스냅샷 (각 폴더 단독 실행 가능) |
 | `DEVLOG.md` | 버전별 문제 인식 → 변경 → 정량 검증 기록 (보고서 개발 과정용) |
 | `HANDOFF.md` | **다른 환경에서 이어받을 때 먼저 읽는 문서** — 상태 요약, 명령 모음, 측정 규칙, 남은 할 일 |
 | `tools/arena.py` | 두 봇을 여러 시드·양 진영으로 대전시켜 승률 집계 |
@@ -35,7 +35,8 @@
   Optuna 자기 대전 리그 탐색 파라미터. v5 상대 새 시드 320경기 **0.656**, 리그 0.762 → 0.849.
 - **v7**: v6 + 깃발병 진입 엄호(F 앞 2칸 목표 건물에 W 선투입). v6 상대 0.575~0.66.
 - **v8**: v7 + 엄호 인원 위협+2·우선도 1.5. v7 상대 0.555~0.60.
-- **v9 (추천)**: v8 + Optuna 2차 탐색 파라미터. v8 상대 0.542(1000경기), v7 0.630, v6 0.760.
+- **v9**: v8 + Optuna 2차 탐색 파라미터. v8 상대 0.542(1000경기), v7 0.630, v6 0.760.
+- **v10 (추천)**: v9 + 목표 위험 배율(주변 적 병력 우세만큼 목표 가치 감점). v9 상대 0.595, 기존 풀 0.993.
 
 ## 사용법 (WSL Ubuntu, 프로젝트 루트에서)
 
@@ -49,8 +50,8 @@ python3 tools/arena.py --a "python3 Model/main.py" --b "python3 Model/main.py" -
 # 파라미터를 바꿔 실험 (코드 수정 없이)
 python3 tools/arena.py --a "BOT_PARAMS='{\"use_tele\":false}' python3 Model/main.py" --b lv2
 
-# 제출 ZIP 생성 → submissions/submission-Junghoon-v9.zip
-python3 tools/make_zip.py v9
+# 제출 ZIP 생성 → submissions/submission-Junghoon-v10.zip
+python3 tools/make_zip.py v10
 ```
 
 `--b` 에 `lv1`, `lv2`, `main` 을 주면 대회 제공 예제 봇을 뜻한다.

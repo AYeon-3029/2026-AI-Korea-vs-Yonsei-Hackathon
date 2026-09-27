@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v9.
+"""깃발 대항전 전략 봇 v10.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -22,6 +22,8 @@
 10. v8: 엄호 인원 위협+2, 엄호 우선도 1.5 (다른 W 작업을 덜 밀어내면서 확실히 이긴다).
 11. v9: Optuna 2차 탐색(v6 리그, 새 스위치 포함) #181 파라미터 + v8 엄호 인원(위협+2).
     전투병 여유 19 → 26, 학생회관 가치 상향, 적 건물 배율·공성 가치 소폭 하향, F 건물 비키기 켬.
+12. v10: 목표 위험 배율(risk_local_w 0.15). 목표 3칸 안에 적 W 가 아군 W 보다 많을수록 F 목표·공성 가치를
+    깎아, 적 병력이 몰린 건물(적 진영 깊숙한 학관·공학관 등) 대신 이길 수 있는 곳부터 노린다.
 """
 import json
 import os
@@ -117,6 +119,13 @@ P = {
     "w_spawn": "enf",              # W 생산 거점 기준: enf(적 F 에 가까운 곳) | myf(아군 F 근처, 엄호용) | mix
     "max_f_early": 6,              # early_turn 까지의 깃발병 상한(중립 건물이 많은 초반 확장 경쟁용)
     "early_turn": 0,               # 0 = 끔
+    # --- v9 이후 스위치 (사용자 리플레이 관찰) ---
+    "risk_depth_w": 0.0,           # 목표가 적 진영 깊이(내 거점까지 − 적 거점까지 거리) 1칸마다 가치를 이 비율로 깎음. 0 = 끔
+    "risk_local_w": 0.15,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15
+    "risk_R": 3,
+    "w_no_losing": False,          # W 는 적이 더 많이 올 수 있는 칸으로 들어가지 않는다(지는 싸움 회피)
+    "siege_ring_eco": False,       # 내 W 단가가 적보다 비싸면(공학관 열세) 적 거점 포위를 하지 않는다
+    "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
     "siege_stage": 2,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입
     "reinforce_hot": False,        # 격전지(아군·적 W 가 2칸 안에서 맞선 칸)에 공성보다 먼저 증원
     "hot_radius": 2,
@@ -515,6 +524,17 @@ def decide(view, init):
     emit_spawn("W", nW, best_spawn(w_goals or list(enF) or [base_opp]), myW)
     emit_spawn("S", nS, best_spawn(unknown), myS)
 
+    # 목표 위험 배율(사용자 관찰 seed 2: 적 진영 깊숙한 학관·공학관을 노리다 병력이 잘림).
+    # 깊이 = 내 생산 거점까지 거리 − 적 생산 거점까지 거리(클수록 적 쪽). 주변 우세 = 반경 안 적 W − 아군 W.
+    def risk_mult(b):
+        if not (P["risk_depth_w"] or P["risk_local_w"]):
+            return 1.0
+        depth = min(geo.dist[s][b] for s in spawn_me) - min(geo.dist[s][b] for s in spawn_opp)
+        R = P["risk_R"]
+        local = (sum(c for i, c in enW.items() if geo.dist[i][b] <= R)
+                 - sum(c for i, c in myW.items() if geo.dist[i][b] <= R))
+        return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + P["risk_local_w"] * max(0, local))
+
     # 5. 이동 도우미(일반 이동 + 역 순간이동)
     moves = {}
     tele_cmds = []
@@ -647,7 +667,10 @@ def decide(view, init):
             if not enough and d <= stage_dist:
                 cover[i] += n
                 continue
-            for dest, k in advance(i, "W", n, g):
+            wsafe = None
+            if P["w_no_losing"]:
+                wsafe = (lambda n: lambda v: threat[v] == 0 or cover[v] + n > threat[v])(n)
+            for dest, k in advance(i, "W", n, g, wsafe):
                 cover[dest] += k
 
     def w_eta(g):
@@ -704,6 +727,10 @@ def decide(view, init):
                     continue
                 seen.add(b)
                 jobs.append((value(bld[b]) + P["escort_bonus"], b, threat[b] + P["escort_extra"], INF, -1))
+    if P["plaza_hold"]:
+        for i, b in bld.items():
+            if b["type"] == "PLAZA" and b["owner"] == me and threat[i] > 0:
+                jobs.append((100.0, i, threat[i] + P["plaza_hold"], INF, -1))
     jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
     done_goals = set()
@@ -815,10 +842,11 @@ def decide(view, init):
             if b["owner"] == opp:
                 # 수비 F 가 서 있으면 전투로 제거하는 순간 깃발이 뽑혀 중립이 된다(상대 점수 즉시 −)
                 bonus = P["siege_def_bonus"] if enF.get(i, 0) else 0.0
-                siege.append((P["siege_bld_bonus"] + bonus + value(b), i))
+                siege.append(((P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i), i))
         ring = set()
-        for s in spawn_opp:
-            ring.update(geo.near(s))
+        if not (P["siege_ring_eco"] and w_cost(me) > w_cost(opp)):
+            for s in spawn_opp:
+                ring.update(geo.near(s))
         for c in ring:
             if c not in bld or bld[c]["owner"] != opp:
                 siege.append((P["siege_ring_value"], c))
@@ -884,7 +912,7 @@ def decide(view, init):
             v *= P["enemy_f_penalty"]
         if leading and not (bld[i]["owner"] != opp and t_me[i] < t_opp[i]):
             v *= 0.05                  # 굳히기: 내 영역 안 중립 건물로 마진을 벌린다
-        targets[i] = v
+        targets[i] = v * risk_mult(i)
 
     def hold_mult(t, ta):
         """2-1: 도착 시점 ta 에 그 건물을 버틸 수 있는가에 따른 목표 배율."""

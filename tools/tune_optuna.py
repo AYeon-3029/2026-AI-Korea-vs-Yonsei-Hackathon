@@ -64,6 +64,45 @@ def space(trial: optuna.Trial) -> dict:
     }
 
 
+def space_v2(trial: optuna.Trial) -> dict:
+    """2차 탐색(v6 이후): v6 값 둘레로 좁히고, v6 이후 만든 스위치를 함께 탐색한다.
+    조건부 파라미터를 쓰지 않아(꺼진 스위치의 하위 값도 늘 제안) 기본값을 그대로 첫 시행에 넣을 수 있다."""
+    return {
+        "max_f": trial.suggest_int("max_f", 4, 10),
+        "min_f": trial.suggest_int("min_f", 2, 6),
+        "min_w": trial.suggest_int("min_w", 2, 8),
+        "w_margin": trial.suggest_int("w_margin", 10, 26),
+        "guard_radius": trial.suggest_int("guard_radius", 8, 18),
+        "dist_offset": trial.suggest_float("dist_offset", 2.0, 8.0),
+        "hall_bonus": trial.suggest_float("hall_bonus", 4.0, 11.0),
+        "eng_bonus": trial.suggest_float("eng_bonus", 5.0, 13.0),
+        "lib_bonus": trial.suggest_float("lib_bonus", 0.5, 4.0),
+        "depot_bonus": trial.suggest_float("depot_bonus", 0.0, 4.0),
+        "hosp_bonus": trial.suggest_float("hosp_bonus", 1.0, 5.0),
+        "center_expect": trial.suggest_float("center_expect", 2.0, 3.5),
+        "side_expect": trial.suggest_float("side_expect", 1.0, 1.6),
+        "enemy_owned_mult": trial.suggest_float("enemy_owned_mult", 1.3, 2.4),
+        "enemy_f_penalty": trial.suggest_float("enemy_f_penalty", 0.2, 0.8),
+        "siege_bld_bonus": trial.suggest_float("siege_bld_bonus", 5.0, 14.0),
+        "siege_ring_value": trial.suggest_float("siege_ring_value", 2.0, 6.0),
+        "chase_mult": trial.suggest_float("chase_mult", 0.8, 1.8),
+        "endgame_turn": trial.suggest_int("endgame_turn", 140, 161),
+        # v6 이후 스위치
+        "escort_wait": trial.suggest_categorical("escort_wait", [False, True]),
+        "escort_dist": trial.suggest_int("escort_dist", 1, 3),
+        "escort_bonus": trial.suggest_float("escort_bonus", 0.0, 8.0),
+        "f_idle_off": trial.suggest_categorical("f_idle_off", [False, True]),
+        "lead_mode": trial.suggest_categorical("lead_mode", ["off", "consolidate"]),
+        "lead_w": trial.suggest_categorical("lead_w", ["reserve", "pressure", "rapid"]),
+        "lead_margin": trial.suggest_int("lead_margin", 3, 14),
+        "lead_min_turn": trial.suggest_int("lead_min_turn", 60, 150),
+        "rapid_garrison": trial.suggest_int("rapid_garrison", 1, 3),
+    }
+
+
+SPACES = {"v1": space, "v2": space_v2}
+
+
 def defaults(bot_dir: Path) -> dict:
     """고정한 봇의 현재 기본값(첫 시행으로 넣어 기준선으로 삼는다)."""
     sys.path.insert(0, str(bot_dir))
@@ -118,6 +157,8 @@ def main() -> None:
     p.add_argument("--trials", type=int, default=300)
     p.add_argument("--workers", type=int, default=24)
     p.add_argument("--opps", default=",".join(LEAGUE))
+    p.add_argument("--space", default="v1", choices=sorted(SPACES), help="탐색 공간(v2 = v6 이후 스위치 포함)")
+    p.add_argument("--enqueue", default="", help="첫 시행들로 넣을 추가 파라미터 JSON 목록(기본값에 덮어씀)")
     p.add_argument("--report", action="store_true")
     p.add_argument("--verify", type=int, default=0, help="상위 N개 시행을 검증 시드에서 재평가")
     args = p.parse_args()
@@ -159,11 +200,13 @@ def main() -> None:
     ev = Evaluator(bot_dir, args.workers, args.opps.split(","))
     if not study.trials:
         base = defaults(bot_dir)
-        keys = space(optuna.trial.FixedTrial(base)).keys()
+        keys = SPACES[args.space](optuna.trial.FixedTrial(base)).keys()
         study.enqueue_trial({k: base[k] for k in keys})
+        for extra in json.loads(args.enqueue or "[]"):
+            study.enqueue_trial({k: {**base, **extra}[k] for k in keys})
 
     def objective(trial: optuna.Trial) -> float:
-        params = space(trial)
+        params = SPACES[args.space](trial)
         res: dict = {}
         for step, seeds in enumerate(STAGES):
             res = merge(res, ev.games(params, seeds))

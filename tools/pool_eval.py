@@ -23,13 +23,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARENA = ROOT / "tools/arena.py"
-POOL = ["lv1", "lv2", "main", "v1", "v2", "v3", "v4"]
+POOL = ["lv1", "lv2", "main", "v1", "v2", "v3", "v4", "rusher", "turtle", "mid"]
 TALLY = re.compile(r"(\d+)승 (\d+)무 (\d+)패")
+
+
+SPARRING = ("rusher", "turtle", "mid")
 
 
 def opp_cmd(name: str) -> str:
     if name in ("lv1", "lv2", "main"):
         return name                       # arena.py 의 공식 예제 봇 별칭
+    if name in SPARRING:
+        return f"python3 {ROOT}/Model/sparring/{name}.py"
     return f"python3 {ROOT}/Model/history/{name}/main.py"
 
 

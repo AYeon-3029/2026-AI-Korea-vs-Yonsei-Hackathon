@@ -76,6 +76,7 @@ P = {
     "local_w_floor": 0.5,          # 그래도 적 W 총수의 이 비율만큼은 유지
     "sym_tiebreak": True,          # 남는 동률을 진영 대칭으로 깨기(미러전 = 무승부)
     "smart_step": "w",             # 동거리 후보 선택 기준 적용 대상 off|f|w|both (F 는 역효과)
+    "siege": True,                 # 남는 W 로 적 건물·생산 거점을 공격 (False 면 순수 수비)
     "f_center_pull": True,         # F 동거리 후보에서 중앙에 가까운 칸을 선호
 }
 
@@ -592,15 +593,21 @@ def decide(view, init):
 
     # 공성조: 적 소유 건물 장악 → 적 생산 거점(본진·병원)과 그 둘레 포위
     siege = []
-    for i, b in bld.items():
-        if b["owner"] == opp:
-            siege.append((P["siege_bld_bonus"] + value(b), i))
-    ring = set()
-    for s in spawn_opp:
-        ring.update(geo.near(s))
-    for c in ring:
-        if c not in bld or bld[c]["owner"] != opp:
-            siege.append((P["siege_ring_value"], c))
+    if P["siege"]:
+        for i, b in bld.items():
+            if b["owner"] == opp:
+                siege.append((P["siege_bld_bonus"] + value(b), i))
+        ring = set()
+        for s in spawn_opp:
+            ring.update(geo.near(s))
+        for c in ring:
+            if c not in bld or bld[c]["owner"] != opp:
+                siege.append((P["siege_ring_value"], c))
+    else:
+        # 순수 수비: 남는 W 는 내 건물에 가치 순으로 주둔한다
+        for i, b in bld.items():
+            if b["owner"] == me:
+                siege.append((value(b), i))
     siege.sort(key=lambda t: (-t[0], geo.nkey(t[1])))
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):

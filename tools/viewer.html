@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>깃발 대항전 리플레이 뷰어</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #dcdad4;
+  --floor: #fbfaf7; --wall: #3a3a3e; --neutral: #e7e4dc;
+  --y: #1f4fa8; --y-soft: #d6e2f7; --k: #b0223a; --k-soft: #f6d9de;
+  --combat: #f08a00; --capture: #1e9e5a; --neut: #8a4fd6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a; --panel: #212125; --ink: #ececef; --muted: #9a9aa2; --line: #36363c;
+    --floor: #1c1c20; --wall: #55555c; --neutral: #2e2e34;
+    --y: #6f9cf0; --y-soft: #22325a; --k: #f06d82; --k-soft: #4f2330;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 12px; }
+h1 { font-size: 17px; margin: 0; }
+.muted { color: var(--muted); }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 36px 16px; text-align: center;
+  background: var(--panel); }
+.drop.over { border-color: var(--y); }
+button, select, input[type=file] { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
+@media (max-width: 960px) { .main { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.controls input[type=range] { flex: 1; min-width: 160px; }
+.turnlbl { font-variant-numeric: tabular-nums; min-width: 92px; font-weight: 600; }
+.boardbox { overflow-x: auto; }
+.board { display: grid; grid-template-columns: 22px repeat(15, minmax(42px, 1fr)); gap: 2px; min-width: 680px; }
+.ax { font-size: 10px; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+.cell { position: relative; aspect-ratio: 1; background: var(--floor); border-radius: 4px;
+  border: 1px solid var(--line); padding: 2px; overflow: hidden; font-size: 10px; }
+.cell.wall { background: var(--wall); border-color: var(--wall); }
+.cell.bld { background: var(--neutral); }
+.cell.own-Y { background: var(--y-soft); border: 2px solid var(--y); }
+.cell.own-K { background: var(--k-soft); border: 2px solid var(--k); }
+.cell.stage1 { border: 2px dashed var(--neut); }
+.cell.base-Y { background: var(--y); color: #fff; }
+.cell.base-K { background: var(--k); color: #fff; }
+.cell.ev-combat { box-shadow: 0 0 0 3px var(--combat) inset; }
+.cell.ev-capture { box-shadow: 0 0 0 3px var(--capture) inset; }
+.cell.ev-neutralize { box-shadow: 0 0 0 3px var(--neut) inset; }
+.btag { font-weight: 700; font-size: 9.5px; letter-spacing: .2px; }
+.bscore { position: absolute; top: 1px; right: 3px; font-weight: 700; font-size: 10px; }
+.bscore.hidden { opacity: .45; font-weight: 400; }
+.units { position: absolute; left: 2px; right: 2px; bottom: 1px; display: flex; flex-wrap: wrap; gap: 1px; }
+.u { border-radius: 3px; padding: 0 3px; font-size: 9.5px; font-weight: 700; color: #fff; line-height: 13px; }
+.u.Y { background: var(--y); } .u.K { background: var(--k); }
+.u.S { opacity: .8; font-style: italic; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+.stats { display: grid; grid-template-columns: auto 1fr 1fr; gap: 3px 10px; font-variant-numeric: tabular-nums; }
+.stats .h { font-weight: 700; }
+.cy { color: var(--y); font-weight: 700; } .ck { color: var(--k); font-weight: 700; }
+h3 { font-size: 13px; margin: 14px 0 6px; }
+pre.cmds { margin: 0; max-height: 170px; overflow: auto; background: var(--bg); border-radius: 6px;
+  padding: 6px 8px; font: 11.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.bad { color: var(--combat); }
+.evlist { font-size: 12px; max-height: 120px; overflow: auto; }
+#chart { width: 100%; height: 120px; display: block; }
+.tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); z-index: 9; }
+.result { font-weight: 700; }
+kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>깃발 대항전 리플레이 뷰어</h1>
+    <input type="file" id="file" accept=".json,application/json" multiple>
+    <select id="pick" hidden></select>
+    <span id="meta" class="muted"></span>
+  </header>
+
+  <div id="drop" class="drop">
+    리플레이 JSON 파일을 여기로 끌어 놓거나 위에서 선택하세요 (여러 개 가능).<br>
+    <span class="muted">예: out/replays/lv2/seed0-AY.json, BaseLines/yk-development-tools/out/local-replay.json</span>
+  </div>
+
+  <div id="app" class="main" hidden>
+    <div class="card">
+      <div class="controls">
+        <button id="first" title="처음 (Home)">⏮</button>
+        <button id="prev" title="이전 턴 (←)">◀</button>
+        <button id="play" title="재생/정지 (Space)">▶</button>
+        <button id="next" title="다음 턴 (→)">▶▏</button>
+        <button id="last" title="마지막 (End)">⏭</button>
+        <span class="turnlbl" id="turnlbl"></span>
+        <input type="range" id="slider" min="0" value="0">
+        <select id="speed" title="재생 속도">
+          <option value="600">느리게</option>
+          <option value="250" selected>보통</option>
+          <option value="80">빠르게</option>
+        </select>
+        <select id="view" title="점수 공개 시점">
+          <option value="all">관전자 시점</option>
+          <option value="Y">Y 시점</option>
+          <option value="K">K 시점</option>
+        </select>
+      </div>
+      <div class="boardbox"><div class="board" id="board"></div></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--y-soft);border:2px solid var(--y)"></span>Y 소유</span>
+        <span><span class="sw" style="background:var(--k-soft);border:2px solid var(--k)"></span>K 소유</span>
+        <span><span class="sw" style="background:var(--neutral)"></span>중립</span>
+        <span><span class="sw" style="border:2px dashed var(--neut)"></span>방금 중립화(N 1)</span>
+        <span><span class="sw" style="box-shadow:0 0 0 3px var(--combat) inset"></span>전투</span>
+        <span><span class="sw" style="box-shadow:0 0 0 3px var(--capture) inset"></span>점령</span>
+        <span><span class="sw" style="box-shadow:0 0 0 3px var(--neut) inset"></span>중립화</span>
+        <span>점수가 흐리면 선택한 시점에서 미공개</span>
+        <span><kbd>←</kbd><kbd>→</kbd> 턴 이동 · <kbd>Space</kbd> 재생</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="stats" id="stats"></div>
+        <h3>점수 추이</h3>
+        <svg id="chart" preserveAspectRatio="none"></svg>
+        <h3>이번 턴 이벤트</h3>
+        <div class="evlist" id="events"></div>
+        <h3><span class="cy">Y</span> 명령 <span class="muted" id="ny"></span></h3>
+        <pre class="cmds" id="cmdY"></pre>
+        <h3><span class="ck">K</span> 명령 <span class="muted" id="nk"></span></h3>
+        <pre class="cmds" id="cmdK"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const ABBR = { PLAZA: "광장", HALL: "학관", STATION: "역", LIBRARY: "도서", ENG: "공학",
+  HOSPITAL: "병원", WATCH: "방송", DEPOT: "보급" };
+const FULL = { PLAZA: "중앙광장", HALL: "학생회관", STATION: "역", LIBRARY: "도서관", ENG: "공학관",
+  HOSPITAL: "병원", WATCH: "방송국", DEPOT: "보급소" };
+const $ = id => document.getElementById(id);
+
+let files = [];      // {name, data}
+let R = null;        // 현재 리플레이
+let frames = [];     // 0 = 시작 상태, n = n턴 종료 상태
+let cur = 0, timer = null;
+
+function load(fileList) {
+  const readers = [...fileList].map(f => f.text().then(t => {
+    try { return { name: f.name, data: JSON.parse(t) }; }
+    catch (e) { alert(`${f.name}: JSON 파싱 실패`); return null; }
+  }));
+  Promise.all(readers).then(list => {
+    list = list.filter(x => x && x.data && x.data.map && x.data.turns);
+    if (!list.length) return;
+    files = list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const pick = $("pick");
+    pick.innerHTML = files.map((f, i) => `<option value="${i}">${f.name}</option>`).join("");
+    pick.hidden = files.length < 2;
+    open(0);
+  });
+}
+
+function open(i) {
+  stop();
+  R = files[i].data;
+  const m = R.map;
+  const init = {
+    resources: { Y: R.config?.resource?.start_resource ?? 10, K: R.config?.resource?.start_resource ?? 10 },
+    units: [], buildings: m.buildings.map(b => ({ id: b.id, owner: "N", stage: 0 })),
+    revealed: { Y: [], K: [] }, occupation: { Y: 0, K: 0 },
+  };
+  frames = [{ turn: 0, state: init, commands: { Y: [], K: [] }, applied: { Y: [], K: [] }, events: [] },
+            ...R.turns];
+  const res = R.result || {};
+  const tn = R.teams || {};
+  const winner = res.winner === "DRAW" ? "무승부" : res.winner ? `${res.winner} 승` : "진행 중";
+  $("meta").innerHTML = `seed ${R.seed} · <span class="cy">Y ${esc(tn.Y?.name ?? "")}</span> vs ` +
+    `<span class="ck">K ${esc(tn.K?.name ?? "")}</span> · <span class="result">${winner}</span>` +
+    (res.reason ? ` (${res.reason}${res.forfeit ? " " + esc(JSON.stringify(res.forfeit)) : ""})` : "");
+  $("slider").max = frames.length - 1;
+  $("drop").hidden = true;
+  $("app").hidden = false;
+  buildBoard();
+  drawChart();
+  show(0);
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+let cells = [];
+function buildBoard() {
+  const b = $("board"), m = R.map;
+  b.innerHTML = "";
+  b.appendChild(el("div", "ax", ""));
+  for (let x = 0; x < m.width; x++) b.appendChild(el("div", "ax", x));
+  cells = [];
+  for (let y = 0; y < m.height; y++) {
+    b.appendChild(el("div", "ax", y));
+    for (let x = 0; x < m.width; x++) {
+      const c = el("div", "cell", "");
+      c.dataset.x = x; c.dataset.y = y;
+      c.addEventListener("mousemove", ev => tip(ev, x, y));
+      c.addEventListener("mouseleave", () => $("tip").hidden = true);
+      b.appendChild(c);
+      cells.push(c);
+    }
+  }
+}
+function el(tag, cls, text) { const e = document.createElement(tag); e.className = cls; e.textContent = text; return e; }
+
+function scoreOf(state, team) {
+  let s = 0;
+  state.buildings.forEach((b, i) => { if (b.owner === team) s += R.map.buildings[i].score; });
+  return s;
+}
+function unitSum(state, team) {
+  const o = { F: 0, W: 0, S: 0 };
+  for (const [t, k, , , c] of state.units) if (t === team) o[k] += c;
+  return o;
+}
+
+function show(n) {
+  cur = Math.max(0, Math.min(frames.length - 1, n));
+  const f = frames[cur], st = f.state, m = R.map;
+  const view = $("view").value;
+  $("slider").value = cur;
+  $("turnlbl").textContent = `턴 ${cur} / ${frames.length - 1}`;
+
+  const bAt = {}, owner = {};
+  m.buildings.forEach((b, i) => { bAt[`${b.x},${b.y}`] = b; owner[b.id] = st.buildings[i]; });
+  const unitsAt = {};
+  for (const [t, k, x, y, c] of st.units) (unitsAt[`${x},${y}`] ||= []).push([t, k, c]);
+  const evAt = {};
+  for (const e of f.events || []) evAt[`${e.x},${e.y}`] = e.type;
+  const revealed = view === "all" ? null : new Set(st.revealed[view]);
+
+  for (const c of cells) {
+    const x = +c.dataset.x, y = +c.dataset.y, key = `${x},${y}`;
+    const terr = m.terrain[y][x];
+    let cls = "cell", html = "";
+    if (terr === "#") cls += " wall";
+    const base = Object.entries(m.bases).find(([, p]) => p[0] === x && p[1] === y);
+    if (base) { cls += ` base-${base[0]}`; html += `<span class="btag">${base[0]} 본진</span>`; }
+    const b = bAt[key];
+    if (b) {
+      const o = owner[b.id];
+      cls += " bld";
+      if (o.owner !== "N") cls += ` own-${o.owner}`;
+      else if (o.stage === 1) cls += " stage1";
+      const hid = revealed && !revealed.has(b.id);
+      html += `<span class="btag">${ABBR[b.type] ?? b.type}</span><span class="bscore${hid ? " hidden" : ""}">${b.score}</span>`;
+    }
+    if (evAt[key]) cls += ` ev-${evAt[key]}`;
+    const us = unitsAt[key];
+    if (us) html += `<div class="units">${us.map(([t, k, n]) => `<span class="u ${t} ${k}">${k}${n}</span>`).join("")}</div>`;
+    c.className = cls;
+    c.innerHTML = html;
+  }
+
+  const uy = unitSum(st, "Y"), uk = unitSum(st, "K");
+  const row = (label, a, b) => `<div>${label}</div><div class="cy">${a}</div><div class="ck">${b}</div>`;
+  const nb = t => st.buildings.filter(b => b.owner === t).length;
+  $("stats").innerHTML =
+    `<div class="h"></div><div class="h cy">Y</div><div class="h ck">K</div>` +
+    row("점수", scoreOf(st, "Y"), scoreOf(st, "K")) +
+    row("건물 수", nb("Y"), nb("K")) +
+    row("자원", st.resources.Y, st.resources.K) +
+    row("깃발병 F", uy.F, uk.F) +
+    row("전투병 W", uy.W, uk.W) +
+    row("정찰병 S", uy.S, uk.S) +
+    row("누적 점령-턴", st.occupation.Y, st.occupation.K);
+
+  const evs = (f.events || []).map(e => {
+    const nm = bAt[`${e.x},${e.y}`] ? FULL[bAt[`${e.x},${e.y}`].type] : "";
+    const who = e.team ? `<span class="c${e.team.toLowerCase()}">${e.team}</span> ` : "";
+    const what = { combat: "전투", capture: "점령", neutralize: "중립화" }[e.type] ?? e.type;
+    return `<div>${who}${what} (${e.x},${e.y}) ${nm}</div>`;
+  });
+  $("events").innerHTML = evs.join("") || `<span class="muted">없음</span>`;
+
+  for (const t of ["Y", "K"]) {
+    const raw = f.commands?.[t] ?? [], ap = f.applied?.[t] ?? [];
+    $(t === "Y" ? "ny" : "nk").textContent = `(출력 ${raw.length}줄 · 유효 ${ap.length})`;
+    $(t === "Y" ? "cmdY" : "cmdK").innerHTML = raw.length
+      ? raw.map(l => esc(l)).join("\n") : `<span class="muted">(없음)</span>`;
+  }
+  drawCursor();
+}
+
+function tip(ev, x, y) {
+  const st = frames[cur].state, m = R.map;
+  const lines = [`<b>(${x}, ${y})</b>`];
+  const i = m.buildings.findIndex(b => b.x === x && b.y === y);
+  if (i >= 0) {
+    const b = m.buildings[i], o = st.buildings[i];
+    lines.push(`${FULL[b.type] ?? b.type} · 점수 ${b.score} · id ${b.id}`);
+    lines.push(`소유 ${o.owner} · 단계 ${o.stage}`);
+    const rv = ["Y", "K"].filter(t => st.revealed[t].includes(b.id));
+    lines.push(`점수 공개: ${rv.length ? rv.join(", ") : "없음"}`);
+  }
+  if (m.terrain[y][x] === "#") lines.push("장애물");
+  for (const [t, k, ux, uy, c] of st.units) if (ux === x && uy === y) lines.push(`${t} ${k} × ${c}`);
+  const t = $("tip");
+  t.innerHTML = lines.join("<br>");
+  t.hidden = false;
+  t.style.left = Math.min(ev.clientX + 14, innerWidth - 220) + "px";
+  t.style.top = (ev.clientY + 14) + "px";
+}
+
+function drawChart() {
+  const svg = $("chart"), W = 340, H = 120, pad = 4;
+  const ys = frames.map(f => scoreOf(f.state, "Y")), ks = frames.map(f => scoreOf(f.state, "K"));
+  const total = R.map.buildings.reduce((s, b) => s + b.score, 0);
+  const n = Math.max(1, frames.length - 1);
+  const px = i => pad + (W - 2 * pad) * i / n, py = v => H - pad - (H - 2 * pad) * v / total;
+  const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join("");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML =
+    `<line x1="${pad}" x2="${W - pad}" y1="${py(total / 2)}" y2="${py(total / 2)}" stroke="var(--line)" stroke-dasharray="3 3"/>` +
+    `<path d="${path(ys)}" fill="none" stroke="var(--y)" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+    `<path d="${path(ks)}" fill="none" stroke="var(--k)" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+    `<line id="cursor" y1="0" y2="${H}" stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  svg.onclick = e => {
+    const r = svg.getBoundingClientRect();
+    show(Math.round((e.clientX - r.left) / r.width * n));
+  };
+  svg._px = px;
+}
+function drawCursor() {
+  const c = document.getElementById("cursor");
+  if (c) { const x = $("chart")._px(cur); c.setAttribute("x1", x); c.setAttribute("x2", x); }
+}
+
+function play() {
+  if (timer) return stop();
+  if (cur >= frames.length - 1) show(0);
+  $("play").textContent = "⏸";
+  const tick = () => {
+    if (cur >= frames.length - 1) return stop();
+    show(cur + 1);
+    timer = setTimeout(tick, +$("speed").value);
+  };
+  timer = setTimeout(tick, +$("speed").value);
+}
+function stop() { clearTimeout(timer); timer = null; $("play").textContent = "▶"; }
+
+$("file").addEventListener("change", e => load(e.target.files));
+$("pick").addEventListener("change", e => open(+e.target.value));
+$("slider").addEventListener("input", e => { stop(); show(+e.target.value); });
+$("view").addEventListener("change", () => show(cur));
+$("first").onclick = () => { stop(); show(0); };
+$("last").onclick = () => { stop(); show(frames.length - 1); };
+$("prev").onclick = () => { stop(); show(cur - 1); };
+$("next").onclick = () => { stop(); show(cur + 1); };
+$("play").onclick = play;
+document.addEventListener("keydown", e => {
+  if (!R || e.target.tagName === "SELECT") return;
+  if (e.key === "ArrowRight") { stop(); show(cur + (e.shiftKey ? 10 : 1)); }
+  else if (e.key === "ArrowLeft") { stop(); show(cur - (e.shiftKey ? 10 : 1)); }
+  else if (e.key === "Home") { stop(); show(0); }
+  else if (e.key === "End") { stop(); show(frames.length - 1); }
+  else if (e.key === " ") { e.preventDefault(); play(); }
+});
+const drop = $("drop");
+["dragenter", "dragover"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+document.addEventListener("drop", e => load(e.dataTransfer.files));
+</script>
+</body>
+</html>

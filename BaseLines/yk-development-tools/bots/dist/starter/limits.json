@@ -1,0 +1,18 @@
+{
+  "turn_timeout_ms": 300,
+  "first_turn_timeout_ms": 3000,
+  "source": "docs/rulebook.md; platform-public-rules-v4",
+  "memory_mib": 384,
+  "process_limit": 32,
+  "stdout_turn_bytes": 65536,
+  "stdout_turn_lines": 4096,
+  "stdout_line_bytes": 1024,
+  "stderr_game_bytes": 1048576,
+  "cpu_only": true,
+  "language_versions": {
+    "python": "3.12.14",
+    "numpy": "2.3.3",
+    "cpp": "C++20",
+    "gcc": "12.2.0"
+  }
+}

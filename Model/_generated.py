@@ -1,0 +1,16 @@
+"""참조 코드·설정에서 자동 생성. 직접 수정하지 않는다."""
+BASE = 'BASE'
+BUILDINGS = 'BUILDINGS'
+CMD_MOVE = 'MOVE'
+CMD_MOVE2 = 'MOVE2'
+CMD_PRIORITY = 'PRIORITY'
+CMD_SPAWN = 'SPAWN'
+CMD_TELE = 'TELE'
+END = 'END'
+INIT = 'INIT'
+MAP = 'MAP'
+RESOURCE = 'RESOURCE'
+TEAM = 'TEAM'
+TURN = 'TURN'
+UNITS = 'UNITS'
+BALANCE = {'grid': {'width': 15, 'height': 15}, 'total_turns': 160, 'first_turn_timeout_ms': 3000, 'tiebreaker_order': ['score', 'occupation_turns', 'unit_value', 'draw'], 'min_base_distance': 12, 'regions': {'sinchon': [0, 4], 'center': [5, 9], 'anam': [10, 14]}, 'units': {'F': {'cost': 5, 'move': 1, 'power': 0, 'can_capture': True, 'vision': 0}, 'W': {'cost': 3, 'move': 1, 'power': 1, 'can_capture': False, 'vision': 0}, 'S': {'cost': 2, 'move': 2, 'power': 0, 'can_capture': False, 'vision': 2}}, 'resource': {'base_income': 10, 'hall_bonus': 2, 'resource_cap': 40, 'start_resource': 10}, 'capture': {'capture_cost': 2, 'plaza_multiplier': 2, 'min_capture_cost': 1}, 'buildings': {'plaza_score': 3, 'library_discount': 1, 'library_stacking': False, 'eng_discount_per': 1, 'eng_cost_floor': 2, 'depot_bonus': 15, 'watch_reveal_range': 3, 'scout_reveal_range': 2}, 'mapgen': {'center': [7, 7], 'obstacle_pairs': 10, 'max_place_attempts': 4000, 'sinchon_building_score': [1, 2], 'center_building_score': [2, 4], 'central_y_margin': 2}, 'tele': {'max_units': 5, 'min_stations': 2, 'per_turn': 1}, 'tiebreak_values': {'F': 5, 'W': 3, 'S': 2}, 'building_display_names': {'PLAZA': '중앙광장', 'HALL': '학생회관', 'STATION': '역', 'LIBRARY': '도서관', 'ENG': {'Y': '공학원', 'K': '정보관'}, 'HOSPITAL': '병원', 'WATCH': '방송국', 'DEPOT': '보급소'}}

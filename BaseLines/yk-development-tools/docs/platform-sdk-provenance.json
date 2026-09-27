@@ -1,0 +1,56 @@
+{
+  "gameCommit": "88a77d888a1562e52ca2b21b2363d52bb8ce307c",
+  "policyRevision": "platform-public-rules-v4",
+  "sdkRevision": "participant-sdk-docs-v2",
+  "originalSdkSha256": "1f27080bc174b90bf697783a0d682b7912a0f46613da451fc66d45e48c428719",
+  "webRulesSha256": "3e35db3dc14524e1d396579a65368d669745c9643e64c8792d3cd73fc87991d7",
+  "removedFiles": {
+    "runner/smoke.py": {
+      "before": "d88e983a76e0ee39592eff5dc83eacc852accd26bf9c837cec064e90a8aa021e",
+      "reason": "Obsolete operational smoke evaluation; required internal bots are not distributed"
+    }
+  },
+  "runnerChanges": {
+    "runner/__init__.py": "Remove obsolete smoke imports and exports",
+    "runner/cli.py": "Remove obsolete smoke-only command-line mode; retain local matches",
+    "runner/match.py": "Replace obsolete bot filename in one docstring; executable AST unchanged"
+  },
+  "modifiedFiles": {
+    "bots/dist/starter/README.md": {
+      "before": "245f7ccf4b6a567a422e446fee8730512793ca73e7aec6fee4c1415350884471",
+      "after": "a0278037cd74dd26b27c8e05074121150fcca613838314b5bd4b0fec8b35e694"
+    },
+    "bots/dist/starter/RULES_SUMMARY.md": {
+      "before": "3f9ff1f5744241a1d56b6407ac422f275d94878294cf7870e37e9623f88722e2",
+      "after": "ce511e8c0fbf9d8a0216ecd73c10744732808cc15b28ac00bdf25717c86ae8d7"
+    },
+    "bots/dist/starter/_support.py": {
+      "before": "45c696cd84169eecd888a08d2fc26b8214890cccb58fc104852c4be182b34393",
+      "after": "24e7199ad86466ece355946dfdb81d5b1f3fab0fa7419f1d975a7d8fa2963651"
+    },
+    "bots/dist/starter/limits.json": {
+      "before": "8bb5daa919b1902b238a50849640b4615cee787cca7f4d9ff476392ed70cab71",
+      "after": "182499583a1da4f5add6c25fe900ad59488c230163b8064c6697014a9b9fec45"
+    },
+    "docs/rulebook.md": {
+      "before": "e0cf1696b7a6ff330c1d00c1dd4436bf96a76bdc96344148bb6fb8f38e06dd5f",
+      "after": "3e35db3dc14524e1d396579a65368d669745c9643e64c8792d3cd73fc87991d7"
+    },
+    "runner/__init__.py": {
+      "before": "c8963c7deac2e15762ad36003d1b4bf0dfb06c736d425fccff3ecc768a83e2c4",
+      "after": "7f675ede62ac8590c279dd4f2f64f8aa526f8d41e60dcfd7dba930612db4fbe2"
+    },
+    "runner/cli.py": {
+      "before": "3324f7525d36b9db92d64ea54bcbb1a7867ec75551b40250d232ef57cf45c1a2",
+      "after": "90b102ca9513f710deed37c68adbca6026f43b641a5c00758d2868ecd1a90b81"
+    },
+    "runner/match.py": {
+      "before": "93fbc27ba47abfd435a5a176ced4e9995d1188e07f58776dbd6fb0fe70c76e9f",
+      "after": "122d3fc0c31ade0b808795d15842949da8c32a26c79c779841e7364aa2f51578"
+    },
+    "docs/PLATFORM_OPERATIONS.md": {
+      "before": null,
+      "after": "15ca4b2343960d9962bdc72a5d93e03fa9850faff81920226c4f86c5507358d5"
+    }
+  }
+}

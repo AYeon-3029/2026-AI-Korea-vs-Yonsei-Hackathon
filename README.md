@@ -9,7 +9,10 @@
 | `Model/main.py` | 현재 개발 중인 봇 (v5). 보조 모듈 `campus_bot.py`, `protocol.py`, `_generated.py` |
 | `Model/history/v1~v5/` | 버전별 스냅샷 (각 폴더 단독 실행 가능) |
 | `DEVLOG.md` | 버전별 문제 인식 → 변경 → 정량 검증 기록 (보고서 개발 과정용) |
+| `HANDOFF.md` | **다른 환경에서 이어받을 때 먼저 읽는 문서** — 상태 요약, 명령 모음, 측정 규칙, 남은 할 일 |
 | `tools/arena.py` | 두 봇을 여러 시드·양 진영으로 대전시켜 승률 집계 |
+| `tools/pool_eval.py` | 상대 풀(예제 3종 + v1~v4 + 스파링 봇) 전체 평가, `--params` 로 파라미터 실험 |
+| `Model/sparring/` | 비교용 스파링 봇 3종 (러셔·거북이·중간형). v5와 코드를 공유하지 않는다 |
 | `tools/make_zip.py` | 서버 제출 ZIP 생성 (파일 권한 0644 고정, `submission-Junghoon-<버전>.zip`) |
 | `tools/viewer.html` | 리플레이 JSON 턴별 뷰어 (브라우저로 열기) |
 | `tools/showmap.py`, `tools/station_analysis.py` | 시드별 맵 출력, 역 효용 분석 |

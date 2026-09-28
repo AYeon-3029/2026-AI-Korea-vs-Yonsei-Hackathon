@@ -131,6 +131,14 @@ P = {
     "la_fail": 0.3,                # 도착 턴에 전투에서 밀리면(탈취 불가) 가치 배율
     "la_floor": 0.4,               # 탈취는 되지만 전혀 지킬 수 없을 때 배율(수성 비율에 따라 1.0 까지)
     "la_siege": True,              # 공성 우선순위에도 적용
+    # 미래 예측 2차 — 곱셈 감점 대신 좁고 구체적인 예측
+    "la_race": False,              # 중립 목표에 적 F 가 나보다 먼저(또는 동시에) 닿으면 가치 배율
+    "race_pen": 0.4,               #   적 F 가 먼저 도착
+    "race_tie": 0.7,               #   동시 도착(경합 → 둘 다 점령 불가)
+    "la_short": 0.0,               # 도착 시점 부족분(φ·적 W − 내 W, 현재 W 만)만큼 가치에서 뺀다. 0 = 끔
+    "la_short_phi": 0.5,
+    "f_wait_2step": False,         # 기다리는 F 는 2칸 안에 적 W 가 엄호보다 많이 모이면 미리 물러난다
+    "siege_no_losing": False,      # 공성 이동에서만, 지금 있는 적 W(생산분 제외)보다 적으면 들어가지 않는다
     "w_no_losing": False,          # W 는 적이 더 많이 올 수 있는 칸으로 들어가지 않는다(지는 싸움 회피)
     "siege_ring_eco": False,       # 내 W 단가가 적보다 비싸면(공학관 열세) 적 거점 포위를 하지 않는다
     "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
@@ -392,6 +400,7 @@ def decide(view, init):
     for i, c in enW.items():
         for j in geo.near(i):
             threat[j] += c
+    threat_w = list(threat)            # 실제로 있는 적 W 만의 1턴 위협(생산 가능분 제외)
     # 적 자원으로 즉시 뽑을 수 있는 W. 자원은 한 번만 쓸 수 있는 공용 예산이므로 거점마다
     # 전액을 더하면(v4) 적 본진·병원 둘레가 항상 위험으로 보여 F 가 끝까지 진입하지 못한다.
     opp_spawnable = view.opp_resource // w_cost(opp)
@@ -572,6 +581,19 @@ def decide(view, init):
         hold = sum(1 for t in ts if M[t] > phi * E[t]) / max(1, len(ts))
         return P["la_floor"] + (1 - P["la_floor"]) * hold
 
+    _wwin = {}
+
+    def w_within(b, k, mine):
+        key = (b, k, mine)
+        if key not in _wwin:
+            cells = myW if mine else enW
+            _wwin[key] = sum(c for i, c in cells.items() if geo.dist[i][b] <= k)
+        return _wwin[key]
+
+    def shortfall(b, ta):
+        """ta 턴 뒤 b 에서 모자랄 W (적은 φ 만큼만 온다고 본다, 생산분 제외)."""
+        return max(0.0, P["la_short_phi"] * w_within(b, ta, False) - w_within(b, ta, True))
+
     def risk_mult(b):
         if not (P["risk_depth_w"] or P["risk_local_w"]):
             return 1.0
@@ -693,6 +715,8 @@ def decide(view, init):
     w_pool = dict(myW)                 # 아직 명령받지 않은 전투병
     cover = [0] * (geo.w * geo.h)      # 이동 후 칸별 아군 전투병 수
 
+    wmode = {"siege": False}
+
     def send_w(g, need, stage_dist, deadline=INF):
         """w_pool 에서 g 에 가까운 순으로 need 명을 보낸다.
         deadline 안에 도착할 수 있는 인원만으로 need 를 채울 수 있으면 그 인원만 쓴다.
@@ -716,6 +740,8 @@ def decide(view, init):
             wsafe = None
             if P["w_no_losing"]:
                 wsafe = (lambda n: lambda v: threat[v] == 0 or cover[v] + n > threat[v])(n)
+            elif P["siege_no_losing"] and wmode["siege"]:
+                wsafe = (lambda n: lambda v: threat_w[v] == 0 or cover[v] + n > threat_w[v])(n)
             for dest, k in advance(i, "W", n, g, wsafe):
                 cover[dest] += k
 
@@ -889,7 +915,11 @@ def decide(view, init):
                 # 수비 F 가 서 있으면 전투로 제거하는 순간 깃발이 뽑혀 중립이 된다(상대 점수 즉시 −)
                 bonus = P["siege_def_bonus"] if enF.get(i, 0) else 0.0
                 la = la_mult(i, min((geo.dist[w][i] for w in myW), default=LA_MAX)) if P["la_siege"] else 1.0
-                siege.append(((P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i) * la, i))
+                sv = (P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i) * la
+                if P["la_short"]:
+                    ta = min((geo.dist[w][i] for w in myW), default=0)
+                    sv = max(0.05 * sv, sv - P["la_short"] * shortfall(i, ta))
+                siege.append((sv, i))
         ring = set()
         if not (P["siege_ring_eco"] and w_cost(me) > w_cost(opp)):
             for s in spawn_opp:
@@ -903,12 +933,14 @@ def decide(view, init):
             if b["owner"] == me:
                 siege.append((value(b), i))
     siege.sort(key=lambda t: (-t[0], geo.nkey(t[1])))
+    wmode["siege"] = True
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):
             break
         send_w(g, threat[g] + 1, P["siege_stage"])
 
     # 2-3 예비대: 남는 W 를 경합 건물 전체에 가장 빨리 증원할 수 있는 칸(1-center)에 둔다
+    wmode["siege"] = False
     rest = any(c > 0 for c in w_pool.values())
     if rest and (P["reserve_pos"] or leading):
         Hr = P["guard_horizon"] or 3
@@ -969,6 +1001,12 @@ def decide(view, init):
         return P["region_bonus"] if t_me[t] < t_opp[t] else 1.0
 
     final_F = {i: 1 for i in holding}
+    race_eta = {}
+    if P["la_race"]:
+        # 적 F 도착 턴: 현재 적 F + (생산 가능하면) 적 생산 거점에서 새로 나오는 F
+        srcs = list(enF) + (spawn_opp if view.opp_resource >= F_COST else [])
+        for t in targets:
+            race_eta[t] = min((geo.dist[x][t] for x in srcs), default=INF)
     free_units = sorted(f_units, key=geo.nkey)
     while free_units and targets:
         best = None
@@ -989,6 +1027,14 @@ def decide(view, init):
                         s *= 2             # 중립화(상대 −) 후 점령(나 +)까지 기한 안에 끝난다
                 if P["lookahead"]:
                     s *= la_mult(t, d)
+                if P["la_race"] and bld[t]["owner"] == "N":
+                    ea = race_eta[t]
+                    if ea < d:
+                        s *= P["race_pen"]
+                    elif ea == d:
+                        s *= P["race_tie"]
+                if P["la_short"]:
+                    s = max(0.05 * s, s - P["la_short"] * shortfall(t, int(d)))
                 if P["frontier_targets"]:
                     s *= hold_mult(t, d)
                 s /= d + P["dist_offset"]
@@ -1001,6 +1047,14 @@ def decide(view, init):
         u = free_units.pop(k)
         del targets[t]
         for dest, n in advance(u, "F", 1, t, safe):
+            if P["f_wait_2step"] and dest == u and u != t:
+                near_en = sum(c for i, c in enW.items() if geo.dist[i][u] <= 2)
+                if near_en > sum(cover[j] for j in geo.near(u)):
+                    side = sorted((sum(c for i, c in enW.items() if geo.dist[i][v] <= 2), geo.nkey(v), d, v)
+                                  for d, v in geo.nbrs[u] if safe(v))
+                    if side and side[0][0] < near_en:
+                        add_move(u, "F", 1, side[0][2])
+                        dest = side[0][3]
             final_F[dest] = final_F.get(dest, 0) + n
 
     # 목표가 없는 깃발병: 위협받으면 피하고 아니면 대기

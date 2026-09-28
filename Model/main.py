@@ -124,6 +124,10 @@ P = {
     "risk_depth_w": 0.0,           # 목표가 적 진영 깊이(내 거점까지 − 적 거점까지 거리) 1칸마다 가치를 이 비율로 깎음. 0 = 끔
     "risk_local_w": 0.15,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15
     "risk_R": 3,
+    "risk_decay_w": 0.0,           # 거리 감쇠 병력 균형(Σ W·γ^거리, 적 − 아군)만큼 추가 감점. 0 = 끔
+    "risk_gamma": 0.7,
+    "risk_spawn_w": 0.0,           # 목표 가까이 적 생산 거점(본진·병원)이 있으면 추가 감점(아군 거점이 가까우면 상쇄). 0 = 끔
+    "risk_spawn_D": 4,
     # 전개 시뮬레이션(사용자 제안): 목표마다 앞으로 t 턴 동안 양쪽이 모을 수 있는 W 를 비교해 탈취·수성 가능성을 본다
     "lookahead": False,
     "tactical_rollout": False,    # 실제 이동·전투·점령을 전개하는 별도 실험(기존 lookahead와 독립)
@@ -624,14 +628,32 @@ def decide(view, init):
         """ta 턴 뒤 b 에서 모자랄 W (적은 φ 만큼만 온다고 본다, 생산분 제외)."""
         return max(0.0, P["la_short_phi"] * w_within(b, ta, False) - w_within(b, ta, True))
 
+    _rm = {}
+
     def risk_mult(b):
-        if not (P["risk_depth_w"] or P["risk_local_w"]):
+        if b in _rm:
+            return _rm[b]
+        _rm[b] = _risk_mult(b)
+        return _rm[b]
+
+    def _risk_mult(b):
+        if not (P["risk_depth_w"] or P["risk_local_w"] or P["risk_decay_w"] or P["risk_spawn_w"]):
             return 1.0
+        extra = 0.0
+        if P["risk_decay_w"]:
+            g = P["risk_gamma"]
+            en = sum(c * g ** geo.dist[i][b] for i, c in enW.items() if geo.dist[i][b] <= 10)
+            my = sum(c * g ** geo.dist[i][b] for i, c in myW.items() if geo.dist[i][b] <= 10)
+            extra += P["risk_decay_w"] * max(0.0, en - my)
+        if P["risk_spawn_w"]:
+            D = P["risk_spawn_D"]
+            near = lambda sp: max((D + 1 - geo.dist[x][b]) / (D + 1) for x in sp) if sp else 0.0
+            extra += P["risk_spawn_w"] * max(0.0, max(0.0, near(spawn_opp)) - max(0.0, near(spawn_me)))
         depth = min(geo.dist[s][b] for s in spawn_me) - min(geo.dist[s][b] for s in spawn_opp)
         R = P["risk_R"]
         local = (sum(c for i, c in enW.items() if geo.dist[i][b] <= R)
                  - sum(c for i, c in myW.items() if geo.dist[i][b] <= R))
-        return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + P["risk_local_w"] * max(0, local))
+        return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + P["risk_local_w"] * max(0, local) + extra)
 
     # 5. 이동 도우미(일반 이동 + 역 순간이동)
     moves = {}

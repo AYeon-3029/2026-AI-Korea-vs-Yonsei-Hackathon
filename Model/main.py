@@ -147,6 +147,7 @@ P = {
     "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
     "cap_fix": False,              # 상한 초과 판정을 예비비 포함 실제 자원 기준으로(실제 경기: 상대는 상한에 거의 안 머묾)
     "spend_all": False,            # 예비비 외 남는 예산을 전부 전투병으로
+    "spend_all_hard": False,       # 예비비까지 전부 전투병으로(점령비는 이번 턴 수입으로)
     "siege_stage": 2,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입
     "reinforce_hot": False,        # 격전지(아군·적 W 가 2칸 안에서 맞선 칸)에 공성보다 먼저 증원
     "hot_radius": 2,
@@ -538,6 +539,12 @@ def decide(view, init):
         while budget >= my_w_cost:
             nW += 1
             budget -= my_w_cost
+    if P["spend_all_hard"]:
+        # 점령 예비비까지 쓴다. 수입이 점령보다 먼저 들어오므로 이번 턴 점령비는 이번 턴 수입으로 낸다.
+        left_res = view.my_resource - nF * F_COST - nW * my_w_cost - nS * S_COST
+        while left_res >= my_w_cost:
+            nW += 1
+            left_res -= my_w_cost
 
     def best_spawn(goals):
         if not goals:

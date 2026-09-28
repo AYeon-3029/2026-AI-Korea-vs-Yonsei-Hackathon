@@ -46,7 +46,15 @@ VARIANTS = {
     "v5def": ("v5s", {"siege": False, "guard_radius": 14}),
     "v6atk": ("v6", {"guard_radius": 0}),
     "v6def": ("v6", {"siege": False, "guard_radius": 20}),
+    # 실제 서버 모방(즉시·압도 승 제외 12경기의 상대 지표, tools/style_metrics.py): 강한 상대는 W 를 우리 쪽으로
+    # 더 밀고(전진 비율 0.20, 우리 계보 0.09~0.13) 경제 건물을 더 쥐며, 한 팀은 막판에 F 를 3 → 9 로 늘렸다.
+    "srv_press": ("v11", {"guard_radius": 8, "siege_bld_bonus": 10.0, "siege_ring_value": 6.0, "w_margin": 34}),
+    "srv_eco": ("v11", {"eng_bonus": 16.0, "hall_bonus": 16.0,
+                        "deny": {"ENG": 6.0, "LIBRARY": 1.5, "HALL": 6.0, "HOSPITAL": 1.0}}),
+    "srv_egf": ("v11", {"eg_f_turn": 145, "eg_max_f": 10, "eg_min_f": 8}),
 }
+# 실제 상대 모방 풀(비대칭 상대 — 상황 조건 스위치도 이 풀로만 잴 수 있다)
+SRV = ["srv_press", "srv_eco", "srv_egf", "v10", "v9"]
 
 
 def opp_cmd(name: str) -> str:
@@ -119,7 +127,7 @@ def main() -> None:
     p.add_argument("--stats", default="", help="BOT_STATS 기록 폴더(비우고 시작). 끝에 상대별 요약 출력")
     args = p.parse_args()
 
-    opps = {"league": LEAGUE, "league6": LEAGUE6}.get(args.opps) or args.opps.split(",")
+    opps = {"league": LEAGUE, "league6": LEAGUE6, "srv": SRV}.get(args.opps) or args.opps.split(",")
     if args.stats:
         shutil.rmtree(args.stats, ignore_errors=True)
     res = evaluate(args.bot, opps, args.seeds, args.workers, args.params, args.stats)

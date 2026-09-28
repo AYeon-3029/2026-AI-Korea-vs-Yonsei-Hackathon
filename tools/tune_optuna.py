@@ -100,6 +100,36 @@ def space_v2(trial: optuna.Trial) -> dict:
     }
 
 
+def space_v3(trial: optuna.Trial) -> dict:
+    """3차 탐색(v11 이후): v11 값 둘레로 좁히고 v9 이후 추가된 엄호·위험 배율·진입 차단을 함께 탐색한다."""
+    return {
+        "max_f": trial.suggest_int("max_f", 4, 9),
+        "min_f": trial.suggest_int("min_f", 3, 6),
+        "min_w": trial.suggest_int("min_w", 3, 9),
+        "w_margin": trial.suggest_int("w_margin", 18, 34),
+        "guard_radius": trial.suggest_int("guard_radius", 10, 18),
+        "dist_offset": trial.suggest_float("dist_offset", 3.0, 7.0),
+        "hall_bonus": trial.suggest_float("hall_bonus", 6.0, 12.0),
+        "eng_bonus": trial.suggest_float("eng_bonus", 6.0, 12.0),
+        "lib_bonus": trial.suggest_float("lib_bonus", 1.0, 4.0),
+        "depot_bonus": trial.suggest_float("depot_bonus", 0.5, 3.0),
+        "hosp_bonus": trial.suggest_float("hosp_bonus", 2.0, 5.0),
+        "center_expect": trial.suggest_float("center_expect", 2.0, 3.0),
+        "side_expect": trial.suggest_float("side_expect", 1.0, 1.3),
+        "enemy_owned_mult": trial.suggest_float("enemy_owned_mult", 1.3, 2.1),
+        "enemy_f_penalty": trial.suggest_float("enemy_f_penalty", 0.3, 0.8),
+        "siege_bld_bonus": trial.suggest_float("siege_bld_bonus", 5.0, 11.0),
+        "siege_ring_value": trial.suggest_float("siege_ring_value", 3.0, 6.5),
+        "chase_mult": trial.suggest_float("chase_mult", 1.0, 1.9),
+        "endgame_turn": trial.suggest_int("endgame_turn", 145, 161),
+        "escort_bonus": trial.suggest_float("escort_bonus", 0.5, 4.0),
+        "escort_extra": trial.suggest_int("escort_extra", 1, 4),
+        "risk_local_w": trial.suggest_float("risk_local_w", 0.05, 0.35),
+        "f_block": trial.suggest_int("f_block", 1, 2),
+        "block_worth": trial.suggest_float("block_worth", 1.0, 8.0),
+    }
+
+
 def _exploiter(overrides):
     """익스플로이터(v10 을 이기는 것만 목표로 하는 스파링 상대)용 공간: v2 에서 일부 범위만 특정 전략 쪽으로 좁힌다."""
     def f(trial):
@@ -127,7 +157,7 @@ class _Rec:
         return self.t.suggest_categorical(name, self.o.get(name, choices))
 
 
-SPACES = {"v1": space, "v2": space_v2,
+SPACES = {"v1": space, "v2": space_v2, "v3": space_v3,
           # 익스플로이터: 돌격형 / 경제형 / 깃발병 물량형
           "x_atk": _exploiter({"guard_radius": (0, 5), "siege_bld_bonus": (8.0, 20.0),
                                "siege_ring_value": (4.0, 10.0), "w_margin": (5, 30)}),
@@ -195,6 +225,7 @@ def main() -> None:
     p.add_argument("--enqueue", default="", help="첫 시행들로 넣을 추가 파라미터 JSON 목록(기본값에 덮어씀)")
     p.add_argument("--report", action="store_true")
     p.add_argument("--verify", type=int, default=0, help="상위 N개 시행을 검증 시드에서 재평가")
+    p.add_argument("--verify-seeds", default=VERIFY, help="검증 시드(기본 100-179,400-479 는 많이 써서 새 시드 권장)")
     args = p.parse_args()
 
     work = ROOT / "out/tune" / args.study
@@ -223,7 +254,7 @@ def main() -> None:
         base = {k: v for k, v in defaults(bot_dir).items() if k in done[0].params}
         rows = [("기준(기본값)", base)] + [(f"#{t.number}", t.params) for t in done[:args.verify]]
         for name, params in rows:
-            s, mean, worst, per = summarize(ev.games(params, VERIFY))
+            s, mean, worst, per = summarize(ev.games(params, args.verify_seeds))
             per_s = " ".join(f"{o}={v:.3f}" for o, v in per.items())
             print(f"{name:<12} 검증 score {s:.3f} mean {mean:.3f} worst {worst:.3f} | {per_s}",
                   flush=True)

@@ -145,6 +145,8 @@ P = {
     "w_no_losing": False,          # W 는 적이 더 많이 올 수 있는 칸으로 들어가지 않는다(지는 싸움 회피)
     "siege_ring_eco": False,       # 내 W 단가가 적보다 비싸면(공학관 열세) 적 거점 포위를 하지 않는다
     "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
+    "cap_fix": False,              # 상한 초과 판정을 예비비 포함 실제 자원 기준으로(실제 경기: 상대는 상한에 거의 안 머묾)
+    "spend_all": False,            # 예비비 외 남는 예산을 전부 전투병으로
     "siege_stage": 2,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입
     "reinforce_hot": False,        # 격전지(아군·적 W 가 2칸 안에서 맞선 칸)에 공성보다 먼저 증원
     "hot_radius": 2,
@@ -523,6 +525,19 @@ def decide(view, init):
     while budget >= my_w_cost and budget + income > cap:
         nW += 1
         budget -= my_w_cost
+    if P["cap_fix"]:
+        # 수입 단계에서 상한을 넘는 돈은 점령 단계 전에 사라진다. 예비비로 잡아 둔 돈도 예외가 아니므로
+        # 예산이 아니라 실제 남는 자원 기준으로 넘칠 분을 전투병으로 바꾼다.
+        left_res = view.my_resource - nF * F_COST - nW * my_w_cost - nS * S_COST
+        while left_res >= my_w_cost and left_res + income > cap:
+            nW += 1
+            left_res -= my_w_cost
+            budget -= my_w_cost
+    if P["spend_all"]:
+        # 실제 서버 상대들처럼 예비비를 뺀 남는 예산은 전부 전투병으로 쓴다(목표 병력 수에 도달해도 저축하지 않음)
+        while budget >= my_w_cost:
+            nW += 1
+            budget -= my_w_cost
 
     def best_spawn(goals):
         if not goals:

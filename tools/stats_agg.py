@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-KEYS = ["my_pts", "opp_pts_known", "n_bld", "F", "W", "f_lost", "gained", "lost", "last20"]
+KEYS = ["my_pts", "opp_pts_known", "n_bld", "F", "W", "f_lost", "gained", "lost", "last20", "react"]
 
 
 def summarize(folder: Path) -> str:

@@ -124,6 +124,11 @@ P = {
     "risk_depth_w": 0.0,           # 목표가 적 진영 깊이(내 거점까지 − 적 거점까지 거리) 1칸마다 가치를 이 비율로 깎음. 0 = 끔
     "risk_local_w": 0.15,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15
     "risk_R": 3,
+    "risk_tele": False,            # 목표 R 칸 안에 적 역이 있으면 다른 적 역의 W(최대 5, TELE 1회분)를 주변 적 병력에 더한다
+    # 적 반응 학습(사용자 제안): 우리 공격 목표 주변에 적 W 가 얼마나 몰려드는지 누적해 위험 가중치를 경기 중에 조정
+    "adapt_k": 0.0,                # 가중치 = risk_local_w × (1 + k × (반응성 − adapt_mid)). 0 = 끔
+    "adapt_mid": 0.3,
+    "adapt_alpha": 0.1,            # 반응성 지수이동평균 계수
     "risk_decay_w": 0.0,           # 거리 감쇠 병력 균형(Σ W·γ^거리, 적 − 아군)만큼 추가 감점. 0 = 끔
     "risk_gamma": 0.7,
     "risk_spawn_w": 0.0,           # 목표 가까이 적 생산 거점(본진·병원)이 있으면 추가 감점(아군 거점이 가까우면 상쇄). 0 = 끔
@@ -231,6 +236,8 @@ class Memory:
         self.scores = {}          # 건물 id → 점수(공개 + 대칭 추론)
         self.depot_got = set()    # 내가 보너스를 받은 보급소 id
         self.prev_enW = {}        # 지난 턴 적 전투병 배치(접근 방향 추정용)
+        self.react = P["adapt_mid"]   # 적 반응성(우리 공격 목표 주변 적 W 증가 ÷ 보낸 W) 지수이동평균
+        self.last_goals = {}      # 지난 턴 W 를 보낸 공격 목표 → 보낸 인원
         pos = {(b["x"], b["y"]): b["id"] for b in init.buildings}
         self.mirror = {b["id"]: pos.get((geo.w - 1 - b["x"], geo.h - 1 - b["y"]), b["id"])
                        for b in init.buildings}
@@ -435,6 +442,21 @@ def decide(view, init):
     # 적도 TELE 를 쓴다. 적 역에 있는 W 는 다음 턴 다른 적 역에 그대로 나타날 수 있어,
     # 적 역을 중립화하려고 올려둔 아군 F 가 저격당한다.
     opp_st = owned(opp, "STATION")
+    # 적 반응성 갱신: 지난 턴 우리가 W 를 보낸 공격 목표 주변 적 W 가 얼마나 늘었는가
+    if mem.last_goals:
+        Rr = P["risk_R"]
+        for g, n in mem.last_goals.items():
+            now = sum(c for i, c in enW.items() if geo.dist[i][g] <= Rr)
+            prev = sum(c for i, c in mem.prev_enW.items() if geo.dist[i][g] <= Rr)
+            sample = max(-1.0, min(2.0, (now - prev) / max(1, n)))
+            mem.react = (1 - P["adapt_alpha"]) * mem.react + P["adapt_alpha"] * sample
+    mem.last_goals = {}
+    eff_local_w = P["risk_local_w"]
+    if P["adapt_k"]:
+        eff_local_w = max(0.0, P["risk_local_w"] * (1 + P["adapt_k"] * (mem.react - P["adapt_mid"])))
+    tele_pool = 0
+    if len(opp_st) >= TELE_MIN_ST:
+        tele_pool = {st: min(TELE_MAX, sum(enW.get(o, 0) for o in opp_st if o != st)) for st in opp_st}
     if P["tele_threat"] and len(opp_st) >= TELE_MIN_ST:
         for b in opp_st:
             threat[b] += min(TELE_MAX, sum(enW.get(a, 0) for a in opp_st if a != b))
@@ -637,7 +659,7 @@ def decide(view, init):
         return _rm[b]
 
     def _risk_mult(b):
-        if not (P["risk_depth_w"] or P["risk_local_w"] or P["risk_decay_w"] or P["risk_spawn_w"]):
+        if not (P["risk_depth_w"] or eff_local_w or P["risk_decay_w"] or P["risk_spawn_w"]):
             return 1.0
         extra = 0.0
         if P["risk_decay_w"]:
@@ -651,9 +673,11 @@ def decide(view, init):
             extra += P["risk_spawn_w"] * max(0.0, max(0.0, near(spawn_opp)) - max(0.0, near(spawn_me)))
         depth = min(geo.dist[s][b] for s in spawn_me) - min(geo.dist[s][b] for s in spawn_opp)
         R = P["risk_R"]
+        if P["risk_tele"] and tele_pool:
+            extra += eff_local_w * max((tele_pool[st] for st in opp_st if geo.dist[st][b] <= R), default=0)
         local = (sum(c for i, c in enW.items() if geo.dist[i][b] <= R)
                  - sum(c for i, c in myW.items() if geo.dist[i][b] <= R))
-        return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + P["risk_local_w"] * max(0, local) + extra)
+        return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + eff_local_w * max(0, local) + extra)
 
     # 5. 이동 도우미(일반 이동 + 역 순간이동)
     moves = {}
@@ -797,6 +821,8 @@ def decide(view, init):
                 wsafe = (lambda n: lambda v: threat[v] == 0 or cover[v] + n > threat[v])(n)
             elif P["siege_no_losing"] and wmode["siege"]:
                 wsafe = (lambda n: lambda v: threat_w[v] == 0 or cover[v] + n > threat_w[v])(n)
+            if g in bld and bld[g]["owner"] != me:
+                mem.last_goals[g] = mem.last_goals.get(g, 0) + n
             for dest, k in advance(i, "W", n, g, wsafe):
                 cover[dest] += k
                 if P["tactical_rollout"]:
@@ -1304,7 +1330,7 @@ def record_stats(view, bld, score_of, f_now, f_after_spawn, w_now):
     out = {"turn": view.turn, "team": view.team, "my_pts": my_pts, "opp_pts_known": opp_known,
            "n_bld": len(mine), "F": f_after_spawn, "W": w_now, "f_lost": s["f_lost"],
            "gained": s["gained"], "lost": s["lost"],
-           "last20": None if s["pts140"] is None else my_pts - s["pts140"]}
+           "last20": None if s["pts140"] is None else my_pts - s["pts140"], "react": round(MEM.react, 3)}
     with open(os.path.join(STATS_DIR, f"{os.getpid()}.json"), "w") as f:
         json.dump(out, f)
 

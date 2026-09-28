@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "BaseLines/yk-development-tools/bots/dist/starter"
 from submission import inspect_zip  # noqa: E402
 
 AUTHOR = "Junghoon"   # 파일 이름에 붙는 작성자(팀 내 구분용)
-FILES = ["submission.json", "main.py", "campus_bot.py", "protocol.py", "_generated.py"]
+FILES = ["submission.json", "main.py", "campus_bot.py", "protocol.py", "_generated.py", "tactical.py"]
 
 
 def main():

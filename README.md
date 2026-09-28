@@ -6,7 +6,7 @@
 
 | 경로 | 내용 |
 |---|---|
-| `Model/main.py` | 현재 개발 중인 봇 (v10). 보조 모듈 `campus_bot.py`, `protocol.py`, `_generated.py` |
+| `Model/main.py` | 현재 개발 중인 봇 (v10). 보조 모듈 `campus_bot.py`, `protocol.py`, `_generated.py`, `tactical.py` (전술 예측 실험) |
 | `Model/history/v1~v10/` | 버전별 스냅샷 (각 폴더 단독 실행 가능) |
 | `DEVLOG.md` | 버전별 문제 인식 → 변경 → 정량 검증 기록 (보고서 개발 과정용) |
 | `HANDOFF.md` | **다른 환경에서 이어받을 때 먼저 읽는 문서** — 상태 요약, 명령 모음, 측정 규칙, 남은 할 일 |

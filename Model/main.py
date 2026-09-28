@@ -32,6 +32,7 @@ import traceback
 from collections import deque
 
 from protocol import BALANCE, DIRS, spawn, move, move2, tele, priority, run
+from tactical import rollout
 
 CFG = BALANCE
 INF = 10 ** 9
@@ -125,6 +126,8 @@ P = {
     "risk_R": 3,
     # 전개 시뮬레이션(사용자 제안): 목표마다 앞으로 t 턴 동안 양쪽이 모을 수 있는 W 를 비교해 탈취·수성 가능성을 본다
     "lookahead": False,
+    "tactical_rollout": False,    # 실제 이동·전투·점령을 전개하는 별도 실험(기존 lookahead와 독립)
+    "tr_weight": 0.35,            # 목표 가치에 더하는 단기 예측 보정 강도
     "la_phi": 0.5,                 # 적 결집 비율(적 W·생산분 중 이 비율이 그 건물로 온다고 본다)
     "la_spawn_frac": 0.5,          # 양쪽 생산분 중 그 건물 쪽으로 보내는 비율
     "la_hold": 6,                  # 탈취 후 이 턴 수 동안 지킬 수 있는지 본다
@@ -714,6 +717,7 @@ def decide(view, init):
     # 6. 전투병 배치
     w_pool = dict(myW)                 # 아직 명령받지 않은 전투병
     cover = [0] * (geo.w * geo.h)      # 이동 후 칸별 아군 전투병 수
+    tr_groups = []                    # 이번 턴 도착 위치, 실제 W 임무, 인원
 
     wmode = {"siege": False}
 
@@ -736,6 +740,8 @@ def decide(view, init):
             left -= n
             if not enough and d <= stage_dist:
                 cover[i] += n
+                if P["tactical_rollout"]:
+                    tr_groups.append((i, g, n))
                 continue
             wsafe = None
             if P["w_no_losing"]:
@@ -744,6 +750,8 @@ def decide(view, init):
                 wsafe = (lambda n: lambda v: threat_w[v] == 0 or cover[v] + n > threat_w[v])(n)
             for dest, k in advance(i, "W", n, g, wsafe):
                 cover[dest] += k
+                if P["tactical_rollout"]:
+                    tr_groups.append((dest, g, k))
 
     def w_eta(g):
         """g 까지 가장 가까운 대기 전투병의 거리."""
@@ -1008,8 +1016,61 @@ def decide(view, init):
         for t in targets:
             race_eta[t] = min((geo.dist[x][t] for x in srcs), default=INF)
     free_units = sorted(f_units, key=geo.nkey)
+    tr_left = 3  # 고정 계산 상한: 후보 3개 × (진입/1턴 대기/계속 대기) × 대응 3개 × 최대 5턴
+    tr_cache = {}
+
+    def tactical_score(u, t, d, base):
+        nonlocal tr_left
+        # 미래 TELE는 이 국소 모델 밖이다. 관련 역이 활성화된 판은 기존 판단을 쓴다.
+        if d > 3 or can_tele or len(opp_st) >= TELE_MIN_ST or left < 2:
+            return base, False
+        key = (u, t)
+        if key not in tr_cache:
+            if not tr_left:
+                return base, False
+            tr_left -= 1
+            st = step_toward(u, t, safe, pref_of("F"))
+            first = st[1] if st else u
+            H = min(5, left)
+            radius = H + 2
+            groups = [(c, g, n) for c, g, n in tr_groups if geo.dist[c][t] <= radius]
+            groups += [(c, c, n) for c, n in w_pool.items() if n and geo.dist[c][t] <= radius]
+            mf = {c: n for c, n in myF.items() if geo.dist[c][t] <= radius}
+            ew = {c: n for c, n in enW.items() if geo.dist[c][t] <= radius}
+            ef = {c: n for c, n in enF.items() if geo.dist[c][t] <= radius}
+            owner = 0 if bld[t]["owner"] == me else 1 if bld[t]["owner"] == opp else -1
+            opp_cap = CFG["capture"]["capture_cost"] * (CFG["capture"]["plaza_multiplier"]
+                       if bld[t]["type"] == "PLAZA" else 1)
+            opp_cap = max(CFG["capture"]["min_capture_cost"], opp_cap -
+                          (CFG["buildings"]["library_discount"] if owned(opp, "LIBRARY") else 0))
+            scores = []
+            for wait in (False, True, "hold"):
+                outcomes = [rollout(geo, t, u, first, groups, mf, ew, ef,
+                            (budget, view.opp_resource),
+                            (income, CFG["resource"]["base_income"] +
+                             CFG["resource"]["hall_bonus"] * len(owned(opp, "HALL"))),
+                            (my_w_cost, w_cost(opp)), (cap_cost(bld[t]), opp_cap),
+                            (spawn_me, spawn_opp), owner, bld[t]["type"], value(bld[t]), H,
+                            policy, wait, {"eng": [len(owned(s, "ENG")) for s in (me, opp)],
+                            "lib": [len(owned(s, "LIBRARY")) for s in (me, opp)],
+                            "depot": [bld[t]["id"] in mem.depot_got, True]})
+                            for policy in ("hold", "reinforce", "hunt")]
+                vals = [r["gain"] - (r["losses"][0][0] * my_w_cost -
+                        r["losses"][1][0] * w_cost(opp) +
+                        F_COST * (not r["actor_alive"])) / H for r in outcomes]
+                # 평균은 확률 추정이 아니다. 3개 가정의 평균과 최악을 반씩 반영한다.
+                scores.append(0.5 * (sum(vals) / len(vals) + min(vals)))
+            choose_wait = safe(u) and scores[1] > scores[0] + 0.1
+            # 같은 W 명령 아래 F가 계속 기다리는 반사실과 비교한다.
+            # 이미 예정된 W 전투/중립화의 이득을 F 진입의 이득으로 중복 계산하지 않는다.
+            tr_cache[key] = (P["tr_weight"] * (scores[choose_wait] - scores[2]) /
+                             (d + P["dist_offset"]), choose_wait)
+        delta, wait = tr_cache[key]
+        return base + delta, wait
+
     while free_units and targets:
         best = None
+        ranked = []
         order = sorted(targets, key=geo.nkey)
         for k, u in enumerate(free_units):
             du = geo.dist[u]
@@ -1039,14 +1100,31 @@ def decide(view, init):
                     s *= hold_mult(t, d)
                 s /= d + P["dist_offset"]
                 key = (-s, geo.nkey(u), geo.nkey(t))
+                if P["tactical_rollout"]:
+                    ranked.append((key, k, t, d, s))
                 if best is None or key < best[0]:
                     best = (key, k, t)
         if best is None:
             break
+        wait = False
+        if P["tactical_rollout"]:
+            choices = []
+            seen = set()
+            for key, k, t, d, s in sorted(ranked):
+                pair = (free_units[k], t)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                score, delay = tactical_score(free_units[k], t, d, s)
+                choices.append(((-score, key[1], key[2]), k, t, delay))
+                if len(choices) == 3:
+                    break
+            key, k, t, wait = min(choices)
+            best = (key, k, t)
         _, k, t = best
         u = free_units.pop(k)
         del targets[t]
-        for dest, n in advance(u, "F", 1, t, safe):
+        for dest, n in ([(u, 1)] if wait else advance(u, "F", 1, t, safe)):
             if P["f_wait_2step"] and dest == u and u != t:
                 near_en = sum(c for i, c in enW.items() if geo.dist[i][u] <= 2)
                 if near_en > sum(cover[j] for j in geo.near(u)):

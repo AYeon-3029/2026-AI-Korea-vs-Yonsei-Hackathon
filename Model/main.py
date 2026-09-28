@@ -148,6 +148,11 @@ P = {
     "cap_fix": False,              # 상한 초과 판정을 예비비 포함 실제 자원 기준으로(실제 경기: 상대는 상한에 거의 안 머묾)
     "spend_all": False,            # 예비비 외 남는 예산을 전부 전투병으로
     "spend_all_hard": False,       # 예비비까지 전부 전투병으로(점령비는 이번 턴 수입으로)
+    # 전선 집결(사용자 제안): 후반에는 남는 W 를 전선 건물에 모으고, 뒤쪽 건물은 적이 다가올 때만 먼저 증원
+    "front_mass_turn": 999,        # 이 턴부터 켠다. 999 = 끔
+    "front_k": 3,                  # 전선 건물 수(내 건물 중 적 생산 거점 쪽으로 가장 깊은 순)
+    "rear_R": 4,                   # 뒤쪽 건물 이 거리 안에 적 W 가 들어오면 그 수 + 1 을 그 거리 안에 도착할 병력으로 보낸다
+    "fm_siege": False,             # 전선 집결 중에도 적 건물 공성(주변 위험 배율 적용, 본진 포위 제외)을 할지
     "siege_stage": 2,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입
     "reinforce_hot": False,        # 격전지(아군·적 W 가 2칸 안에서 맞선 칸)에 공성보다 먼저 증원
     "hot_radius": 2,
@@ -907,7 +912,8 @@ def decide(view, init):
         # 1턴 위협 대신 H 턴 도달 전력 기준. 적 F 가 H 턴 안에 닿지 못하는 건물은 지킬 필요가 없다.
         guard_posts = [(-value(b), geo.nkey(p), p) for p, b in bld.items()
                        if b["owner"] == me and p not in done_goals and opp_f_reach(p, H)]
-    for _, _, p in ([] if hold or rapid else sorted(guard_posts)):
+    fm = view.turn >= P["front_mass_turn"] and not (hold or rapid)
+    for _, _, p in ([] if hold or rapid or fm else sorted(guard_posts)):
         if not any(c > 0 for c in w_pool.values()):
             break
         # 같은 수면 1:1 상쇄로 모두 사라지고 적 F 가 살아남아 중립화한다 → 이기려면 적 + 1 이 필요하다
@@ -928,9 +934,28 @@ def decide(view, init):
                 break
             send_w(e, threat[e] + 1, -1)
 
+    # 전선 집결: 전선 건물 = 내 건물 중 (내 거점까지 − 적 거점까지 거리) 가 큰 순 front_k 개
+    front = []
+    if fm:
+        def depth(p):
+            return min(geo.dist[x][p] for x in spawn_me) - min(geo.dist[x][p] for x in spawn_opp)
+        mine_b = sorted((p for p, b in bld.items() if b["owner"] == me), key=lambda p: (-depth(p), geo.nkey(p)))
+        front = mine_b[:P["front_k"]]
+        for p in sorted(mine_b[P["front_k"]:], key=lambda p: (-value(bld[p]), geo.nkey(p))):
+            if not any(c > 0 for c in w_pool.values()):
+                break
+            en = sum(c for i, c in enW.items() if geo.dist[i][p] <= P["rear_R"])
+            if en:
+                send_w(p, en + 1, -1, deadline=P["rear_R"])
+
     # 공성조: 적 소유 건물 장악 → 적 생산 거점(본진·병원)과 그 둘레 포위
     siege = []
-    if leading:
+    if fm:
+        if P["fm_siege"]:
+            for i, b in bld.items():
+                if b["owner"] == opp:
+                    siege.append(((P["siege_bld_bonus"] + value(b)) * risk_mult(i), i))
+    elif leading:
         pass                           # 굳히기: 공성하지 않는다. 남는 W 는 아래 예비대 배치로 간다
     elif endgame and P["eg_garrison"]:
         # 후반: 적 깃발병이 올라온 적 건물(제거하면 즉시 중립) + 내 건물 주둔. 본진 포위는 멈춘다.
@@ -968,6 +993,15 @@ def decide(view, init):
         if not any(c > 0 for c in w_pool.values()):
             break
         send_w(g, threat[g] + 1, P["siege_stage"])
+
+    # 전선 집결: 남는 W 전부를 전선 건물에 가치 비율로 나눈다
+    if fm and front:
+        left_w = sum(c for c in w_pool.values() if c > 0)
+        tot_v = sum(value(bld[p]) for p in front) or 1.0
+        for p in front:
+            share = -(-left_w * value(bld[p]) // tot_v)
+            if share > 0 and any(c > 0 for c in w_pool.values()):
+                send_w(p, int(share), -1)
 
     # 2-3 예비대: 남는 W 를 경합 건물 전체에 가장 빨리 증원할 수 있는 칸(1-center)에 둔다
     wmode["siege"] = False

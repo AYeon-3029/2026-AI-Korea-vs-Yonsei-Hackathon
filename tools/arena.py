@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -48,7 +49,7 @@ def play(job):
     cfg["first_turn_timeout_ms"] = 3000
     bots = [SubprocessBot(cmd_y, name=cmd_y), SubprocessBot(cmd_k, name=cmd_k)]
     try:
-        replay, result = run_match(seed, cfg, *bots, turn_timeout_ms=300)
+        replay, result = run_match(seed, cfg, *bots, turn_timeout_ms=int(os.environ.get("ARENA_TIMEOUT_MS", "300")))
     finally:
         for b in bots:
             b.close()

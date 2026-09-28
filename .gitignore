@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 out/tune/
+# 강화학습·신경망 산출물(데이터 조각·맵 캐시·체크포인트, 수 GB) — 로컬 전용
+out/rl/
+out/nn/
+out/sub/

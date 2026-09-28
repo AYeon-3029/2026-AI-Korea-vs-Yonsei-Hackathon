@@ -36,7 +36,7 @@ from pool_eval import LEAGUE, opp_cmd  # noqa: E402
 STAGES = ["0-19", "20-39", "40-79", "200-279"]      # 누적 20 → 40 → 80 → 160 시드
 VERIFY = "100-179,400-479"
 WORST_W = 0.5
-BOT_FILES = ["main.py", "protocol.py", "campus_bot.py", "_generated.py"]
+BOT_FILES = ["main.py", "protocol.py", "campus_bot.py", "_generated.py", "tactical.py"]
 
 
 def space(trial: optuna.Trial) -> dict:
@@ -100,7 +100,41 @@ def space_v2(trial: optuna.Trial) -> dict:
     }
 
 
-SPACES = {"v1": space, "v2": space_v2}
+def _exploiter(overrides):
+    """익스플로이터(v10 을 이기는 것만 목표로 하는 스파링 상대)용 공간: v2 에서 일부 범위만 특정 전략 쪽으로 좁힌다."""
+    def f(trial):
+        out = {}
+        base = space_v2(_Rec(trial, overrides))
+        out.update(base)
+        return out
+    return f
+
+
+class _Rec:
+    """space_v2 의 suggest 호출을 가로채 지정 파라미터의 범위를 바꾼다."""
+    def __init__(self, trial, overrides):
+        self.t, self.o = trial, overrides
+
+    def suggest_int(self, name, lo, hi):
+        lo, hi = self.o.get(name, (lo, hi))
+        return self.t.suggest_int(name, lo, hi)
+
+    def suggest_float(self, name, lo, hi):
+        lo, hi = self.o.get(name, (lo, hi))
+        return self.t.suggest_float(name, lo, hi)
+
+    def suggest_categorical(self, name, choices):
+        return self.t.suggest_categorical(name, self.o.get(name, choices))
+
+
+SPACES = {"v1": space, "v2": space_v2,
+          # 익스플로이터: 돌격형 / 경제형 / 깃발병 물량형
+          "x_atk": _exploiter({"guard_radius": (0, 5), "siege_bld_bonus": (8.0, 20.0),
+                               "siege_ring_value": (4.0, 10.0), "w_margin": (5, 30)}),
+          "x_eco": _exploiter({"eng_bonus": (10.0, 20.0), "hall_bonus": (9.0, 18.0),
+                               "w_margin": (20, 40), "guard_radius": (10, 20)}),
+          "x_fsw": _exploiter({"max_f": (10, 16), "min_f": (5, 10), "w_margin": (0, 20),
+                               "dist_offset": (1.0, 5.0)})}
 
 
 def defaults(bot_dir: Path) -> dict:

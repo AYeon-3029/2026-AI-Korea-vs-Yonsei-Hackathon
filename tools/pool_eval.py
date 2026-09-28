@@ -34,9 +34,12 @@ LEAGUE = ["v5s", "v5atk", "v5def", "v4", "mid"]
 LEAGUE6 = ["v6", "v6atk", "v6def", "v5s", "v4"]
 TALLY = re.compile(r"(\d+)승 (\d+)무 (\d+)패")
 
-SPARRING = ("rusher", "turtle", "mid")
+SPARRING = ("rusher", "turtle", "mid", "presser", "raider", "econ", "reactive")
 # 이름 → (기반 버전, 파라미터). 스타일 실험(HANDOFF §7)의 돌격형·수비형
 # PLAN-frontier.md 의 이름 → 이 도구의 이름
+# 탐색·확률·학습형 스파링 봇(제출물 아님). mcts_uct 는 턴당 최대 1.5초라 ARENA_TIMEOUT_MS 를 늘려 평가한다.
+# rl:<이름> 은 out/rl/<이름>/latest.pt 가중치의 강화학습 봇.
+SEARCH = {"mcts_uct": "mcts/main.py uct", "mcts_ts": "mcts/main.py thompson", "mixbot": "mcts/main.py mix"}
 ALIASES = {"v5ref": "v5", "s_rush": "v5atk", "s_turtle": "v5def"}
 VARIANTS = {
     "v5atk": ("v5s", {"guard_radius": 0}),
@@ -50,6 +53,10 @@ def opp_cmd(name: str) -> str:
     name = ALIASES.get(name, name)
     if name in ("lv1", "lv2", "main"):
         return name                       # arena.py 의 공식 예제 봇 별칭
+    if name in SEARCH:
+        return f"python3 {ROOT}/Model/sparring/{SEARCH[name]}"
+    if name.startswith("rl:"):
+        return f"RL_CKPT={ROOT}/out/rl/{name[3:]}/latest.pt python3 {ROOT}/Model/sparring/rlbot/main.py"
     if name in SPARRING:
         return f"python3 {ROOT}/Model/sparring/{name}.py"
     if name in VARIANTS:

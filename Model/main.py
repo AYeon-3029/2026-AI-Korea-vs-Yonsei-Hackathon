@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v10.
+"""깃발 대항전 전략 봇 v11.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -24,6 +24,8 @@
     전투병 여유 19 → 26, 학생회관 가치 상향, 적 건물 배율·공성 가치 소폭 하향, F 건물 비키기 켬.
 12. v10: 목표 위험 배율(risk_local_w 0.15). 목표 3칸 안에 적 W 가 아군 W 보다 많을수록 F 목표·공성 가치를
     깎아, 적 병력이 몰린 건물(적 진영 깊숙한 학관·공학관 등) 대신 이길 수 있는 곳부터 노린다.
+13. v11: 진입 차단(f_block 2). 전투는 같은 칸에서만 일어나므로, 적 F 가 k(≤2) 턴 안에 들어올 수 있는 내 건물에
+    k 턴 안에 도착하는 W 로 (k 턴 안에 닿는 적 W + 1) 명을 올린다(실제 경기 상실 217건 중 216건이 1턴 예고, 전부 건물 칸 W 0).
 """
 import json
 import os
@@ -93,6 +95,15 @@ P = {
     # --- v6 스위치 ---
     "endgame_turn": 151,           # 이 턴부터 후반 모드(가치 = 순수 점수, 기한 안 도달 목표만). 999 = 끔 v6: 150 → 151
     "eg_garrison": False,          # 후반 모드에서 적 본진 포위를 멈추고 내 건물 주둔으로 전환
+    # 막판 F 증원(실제 경기 V10 패배: 152턴 광장 상실 후 F 3명으로 8턴간 탈환 실패, 상대는 F 3 → 9)
+    "eg_f_turn": 999,              # 이 턴부터 F 상한·최소를 아래 값으로(목표는 160턴 안에 닿는 건물만 센다). 999 = 끔
+    "eg_max_f": 10,
+    "eg_min_f": 8,
+    # 진입 차단(실제 경기 상실 112건 분석: 전부 적 F 가 전 턴 1칸 옆 → 그 턴 건물 칸 위 아군 W 0).
+    # 적 F 가 k(≤ f_block) 턴 안에 들어올 수 있는 내 건물에, k 턴 안에 도착하는 W 로 (k 턴 안에 닿는 적 W + 1) 명을 올린다.
+    "f_block": 2,                  # 0 = 끔, 1 = 1칸 옆 적 F 만, 2 = 2칸까지. v11: 0 → 2
+    "block_worth": 3.0,            # 작업 가치 = block_worth + 건물 가치. 10 은 다른 작업을 과하게 밀어낸다. v11: 3.0
+    "eg_risk_scale": 1.0,         # 후반 모드(endgame_turn~)의 목표 위험 배율 가중치 배율. 1.0 = v10 그대로, 0 = 막판엔 위험 무시
     "finish_k": 0,                 # 적 건물이 이 수 이하이고 내가 과반이면 즉시 승리 노림. 0 = 끔
     "finish_mult": 3.0,            # 그때 적 건물 목표 가치 배율
     "f_contest_wait": False,       # 적 F 가 있는 칸은 아군 W 엄호가 도착할 때 함께 들어간다(같은 턴 탈취)
@@ -454,6 +465,8 @@ def decide(view, init):
     eff_local_w = P["risk_local_w"]
     if P["adapt_k"]:
         eff_local_w = max(0.0, P["risk_local_w"] * (1 + P["adapt_k"] * (mem.react - P["adapt_mid"])))
+    if endgame:
+        eff_local_w *= P["eg_risk_scale"]
     tele_pool = 0
     if len(opp_st) >= TELE_MIN_ST:
         tele_pool = {st: min(TELE_MAX, sum(enW.get(o, 0) for o in opp_st if o != st)) for st in opp_st}
@@ -503,13 +516,16 @@ def decide(view, init):
     n_myF, n_myW = sum(myF.values()), sum(myW.values())
     n_enW = sum(enW.values())
     n_goals = len(targets_all)
-    if endgame:
+    eg_f = view.turn >= P["eg_f_turn"]
+    if endgame or eg_f:
         # 지금 생산한 F 가 기한 안에 닿을 수 있는 건물만 센다
         n_goals = sum(1 for t in targets_all
                       if min(geo.dist[s][t] for s in spawn_me) <= left)
     cap_f = P["max_f_early"] if view.turn <= P["early_turn"] else P["max_f"]
+    if eg_f:
+        cap_f = P["eg_max_f"]
     des_F = min(cap_f, n_goals)
-    min_F = min(P["min_f"], des_F)
+    min_F = min(P["eg_min_f"] if eg_f else P["min_f"], des_F)
     n_enF = sum(enF.values())
     if P["local_w"]:
         # 전투는 국지적 수 우위만 의미가 있다. 적 총수를 그대로 따라가면 상대가 내 생산
@@ -882,6 +898,16 @@ def decide(view, init):
                     continue
                 seen.add(b)
                 jobs.append((value(bld[b]) + P["escort_bonus"], b, threat[b] + P["escort_extra"], INF, -1))
+    if P["f_block"]:
+        # 전투는 같은 칸에서만 일어난다. 적 F 가 도착하는 턴에 그 칸 위 아군 W 가 적 W 보다 많아야 건물이 산다.
+        for b, bb in bld.items():
+            if bb["owner"] != me or enF.get(b, 0):
+                continue
+            k = min((geo.dist[e][b] for e in enF), default=INF)
+            if k > P["f_block"]:
+                continue
+            need = sum(c for j, c in enW.items() if geo.dist[j][b] <= k) + 1
+            jobs.append((P["block_worth"] + value(bb), b, need, k, -1))
     if P["plaza_hold"]:
         for i, b in bld.items():
             if b["type"] == "PLAZA" and b["owner"] == me and threat[i] > 0:

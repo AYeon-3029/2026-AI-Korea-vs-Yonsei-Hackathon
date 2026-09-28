@@ -103,7 +103,15 @@ P = {
     # 적 F 가 k(≤ f_block) 턴 안에 들어올 수 있는 내 건물에, k 턴 안에 도착하는 W 로 (k 턴 안에 닿는 적 W + 1) 명을 올린다.
     "f_block": 2,                  # 0 = 끔, 1 = 1칸 옆 적 F 만, 2 = 2칸까지. v11: 0 → 2
     "block_worth": 3.0,            # 작업 가치 = block_worth + 건물 가치. 10 은 다른 작업을 과하게 밀어낸다. v11: 3.0
-    "eg_risk_scale": 1.0,         # 후반 모드(endgame_turn~)의 목표 위험 배율 가중치 배율. 1.0 = v10 그대로, 0 = 막판엔 위험 무시
+    # 방어 범위 경로(사용자 관찰 seed 3608: 본진 병력이 방송국만 보고 돌아 나가는데, 광장 쪽으로 나가면 비슷한 거리로
+    # 광장·방송국을 함께 지원 범위에 둔다). 칸의 방어 가치 = cov_R 칸 안 '적이 근처에 있는 내 건물' 가치 합.
+    "cov_route": False,            # W 최단 경로 동률을 경로 전체 방어 가치 합으로 깬다
+    "cov_R": 2,
+    "cov_side": False,             # 기한 없는 이동에서 방어 가치가 오르는 옆걸음(+1턴)을 허용
+    "cov_lambda": 3.0,             # 옆걸음 비용(경로 방어 가치 합 단위)
+    # 가망 없는 수비 포기(사용자 관찰 seed 3609): 주변 적 W − 아군 W 가 이 이상이면 경계·진입 차단을 보내지 않는다. 0 = 끔
+    "def_hopeless": 0,
+    "eg_risk_scale": 1.0,        # 후반 모드(endgame_turn~)의 목표 위험 배율 가중치 배율. 1.0 = v10 그대로, 0 = 막판엔 위험 무시
     "finish_k": 0,                 # 적 건물이 이 수 이하이고 내가 과반이면 즉시 승리 노림. 0 = 끔
     "finish_mult": 3.0,            # 그때 적 건물 목표 가치 배율
     "f_contest_wait": False,       # 적 F 가 있는 칸은 아군 W 엄호가 도착할 때 함께 들어간다(같은 턴 탈취)
@@ -770,7 +778,22 @@ def decide(view, init):
         return min(geo.dist[i][goal], r[0]) if r else geo.dist[i][goal]
 
     def walk(i, kind, n, goal, safe, out):
-        st = step_toward(i, goal, safe, pref_of(kind))
+        prefer = pref_of(kind)
+        if kind == "W" and P["cov_route"] and geo.dist[i][goal] < INF:
+            pv = path_cov(goal)
+            base_pref = prefer
+            prefer = (lambda v: (-pv[v],) + base_pref(v)) if base_pref else (lambda v: (-pv[v], geo.nkey(v)))
+        st = step_toward(i, goal, safe, prefer)
+        if kind == "W" and P["cov_side"] and wmode.get("side_ok") and st is not None:
+            # 옆걸음: 거리는 그대로, 방어 가치는 엄격히 오르는 칸만(같은 거리에서 방어 가치가 계속 올라야 하므로 순환 없음)
+            pv = path_cov(goal)
+            cur = geo.dist[i][goal]
+            side = [(pv[v], geo.nkey(v), d, v) for d, v in geo.nbrs[i]
+                    if geo.dist[v][goal] == cur and cov_val[v] > cov_val[i] and (safe is None or safe(v))]
+            if side:
+                best = max(side, key=lambda s: (s[0], -s[1]))
+                if best[0] - P["cov_lambda"] > pv[st[1]]:
+                    st = (best[2], best[3])
         if st is None:
             out.append((i, n))
         else:
@@ -810,6 +833,38 @@ def decide(view, init):
 
     wmode = {"siege": False}
 
+    # 방어 가치 지도: 칸마다 cov_R 칸 안 '적 유닛이 6칸 안에 있는 내 건물' 가치 합
+    cov_val = [0.0] * geo.n
+    if P["cov_route"] or P["cov_side"]:
+        en_cells = list(enF) + list(enW)
+        for p, b in bld.items():
+            if b["owner"] == me and any(geo.dist[p][e] <= 6 for e in en_cells):
+                v = value(b)
+                dp = geo.dist[p]               # 장애물 칸의 거리표는 None 이므로 건물 쪽 행을 쓴다
+                for c in range(geo.n):
+                    if dp[c] <= P["cov_R"]:
+                        cov_val[c] += v
+    _pcov = {}
+
+    def hopeless(b):
+        """주변(risk_R 칸) 적 W 가 아군 W 보다 def_hopeless 이상 많으면 수비를 포기한다."""
+        if not P["def_hopeless"]:
+            return False
+        R = P["risk_R"]
+        gap = (sum(c for i, c in enW.items() if geo.dist[i][b] <= R)
+               - sum(c for i, c in myW.items() if geo.dist[i][b] <= R))
+        return gap >= P["def_hopeless"]
+
+    def path_cov(g):
+        """pv[c] = c 에서 g 까지 최단 경로 중 방어 가치 합(g 제외)이 가장 큰 값."""
+        if g not in _pcov:
+            dg = geo.dist[g]
+            pv = [0.0] * geo.n
+            for c in sorted((c for c in range(geo.n) if dg[c] < INF and c != g), key=lambda c: dg[c]):
+                pv[c] = cov_val[c] + max((pv[u] for _, u in geo.nbrs[c] if dg[u] == dg[c] - 1), default=0.0)
+            _pcov[g] = pv
+        return _pcov[g]
+
     def send_w(g, need, stage_dist, deadline=INF):
         """w_pool 에서 g 에 가까운 순으로 need 명을 보낸다.
         deadline 안에 도착할 수 있는 인원만으로 need 를 채울 수 있으면 그 인원만 쓴다.
@@ -820,6 +875,7 @@ def decide(view, init):
         if deadline < INF and sum(w_pool[t[2]] for t in timely) >= need:
             near_ws = timely
         enough = sum(w_pool[t[2]] for t in near_ws) >= need
+        wmode["side_ok"] = deadline >= INF and wmode["siege"]   # 공성·잔여 이동만(요격·경계·차단은 서둘러야 한다)
         left = need
         for d, _, i in near_ws:
             if left <= 0:
@@ -901,7 +957,7 @@ def decide(view, init):
     if P["f_block"]:
         # 전투는 같은 칸에서만 일어난다. 적 F 가 도착하는 턴에 그 칸 위 아군 W 가 적 W 보다 많아야 건물이 산다.
         for b, bb in bld.items():
-            if bb["owner"] != me or enF.get(b, 0):
+            if bb["owner"] != me or enF.get(b, 0) or hopeless(b):
                 continue
             k = min((geo.dist[e][b] for e in enF), default=INF)
             if k > P["f_block"]:
@@ -976,7 +1032,7 @@ def decide(view, init):
     enemy_cells = list(enF) + list(enW)
     guard_posts = []
     for p, b in bld.items():
-        if b["owner"] != me or p in done_goals:
+        if b["owner"] != me or p in done_goals or hopeless(p):
             continue
         danger = min((geo.dist[p][e] for e in enemy_cells), default=INF)
         if danger <= P["guard_radius"]:

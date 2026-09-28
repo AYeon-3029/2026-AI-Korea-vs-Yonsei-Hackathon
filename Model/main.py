@@ -123,6 +123,14 @@ P = {
     "risk_depth_w": 0.0,           # 목표가 적 진영 깊이(내 거점까지 − 적 거점까지 거리) 1칸마다 가치를 이 비율로 깎음. 0 = 끔
     "risk_local_w": 0.15,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15
     "risk_R": 3,
+    # 전개 시뮬레이션(사용자 제안): 목표마다 앞으로 t 턴 동안 양쪽이 모을 수 있는 W 를 비교해 탈취·수성 가능성을 본다
+    "lookahead": False,
+    "la_phi": 0.5,                 # 적 결집 비율(적 W·생산분 중 이 비율이 그 건물로 온다고 본다)
+    "la_spawn_frac": 0.5,          # 양쪽 생산분 중 그 건물 쪽으로 보내는 비율
+    "la_hold": 6,                  # 탈취 후 이 턴 수 동안 지킬 수 있는지 본다
+    "la_fail": 0.3,                # 도착 턴에 전투에서 밀리면(탈취 불가) 가치 배율
+    "la_floor": 0.4,               # 탈취는 되지만 전혀 지킬 수 없을 때 배율(수성 비율에 따라 1.0 까지)
+    "la_siege": True,              # 공성 우선순위에도 적용
     "w_no_losing": False,          # W 는 적이 더 많이 올 수 있는 칸으로 들어가지 않는다(지는 싸움 회피)
     "siege_ring_eco": False,       # 내 W 단가가 적보다 비싸면(공학관 열세) 적 거점 포위를 하지 않는다
     "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
@@ -526,6 +534,44 @@ def decide(view, init):
 
     # 목표 위험 배율(사용자 관찰 seed 2: 적 진영 깊숙한 학관·공학관을 노리다 병력이 잘림).
     # 깊이 = 내 생산 거점까지 거리 − 적 생산 거점까지 거리(클수록 적 쪽). 주변 우세 = 반경 안 적 W − 아군 W.
+    # 전개 시뮬레이션: prof[t] = t 턴 안에 b 에 모을 수 있는 W (현재 W + 생산 거점에서 수입으로 뽑아 보내는 W)
+    LA_MAX = 30
+    _prof = {}
+
+    def la_profile(b, mine):
+        key = (b, mine)
+        if key not in _prof:
+            cells, spawns = (myW, spawn_me) if mine else (enW, spawn_opp)
+            res = view.my_resource if mine else view.opp_resource
+            team = me if mine else opp
+            inc = CFG["resource"]["base_income"] + CFG["resource"]["hall_bonus"] * len(owned(team, "HALL"))
+            cost = w_cost(team)
+            prof = [0.0] * (LA_MAX + 1)
+            for i, c in cells.items():
+                d = geo.dist[i][b]
+                if d <= LA_MAX:
+                    prof[d] += c
+            for t in range(1, LA_MAX + 1):
+                prof[t] += prof[t - 1]
+            ds = min(geo.dist[x][b] for x in spawns)
+            for t in range(ds, LA_MAX + 1):
+                prof[t] += P["la_spawn_frac"] * ((res + inc * (t - ds)) // cost)
+            _prof[key] = prof
+        return _prof[key]
+
+    def la_mult(b, ta):
+        """ta 턴에 도착해 탈취할 수 있는가, 그 뒤 la_hold 턴 동안 지킬 수 있는가."""
+        if not P["lookahead"]:
+            return 1.0
+        ta = min(int(ta), LA_MAX)
+        M, E = la_profile(b, True), la_profile(b, False)
+        phi = P["la_phi"]
+        if phi * E[ta] >= M[ta] and E[ta] > 0:
+            return P["la_fail"]
+        ts = range(ta + 1, min(LA_MAX, ta + P["la_hold"]) + 1)
+        hold = sum(1 for t in ts if M[t] > phi * E[t]) / max(1, len(ts))
+        return P["la_floor"] + (1 - P["la_floor"]) * hold
+
     def risk_mult(b):
         if not (P["risk_depth_w"] or P["risk_local_w"]):
             return 1.0
@@ -842,7 +888,8 @@ def decide(view, init):
             if b["owner"] == opp:
                 # 수비 F 가 서 있으면 전투로 제거하는 순간 깃발이 뽑혀 중립이 된다(상대 점수 즉시 −)
                 bonus = P["siege_def_bonus"] if enF.get(i, 0) else 0.0
-                siege.append(((P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i), i))
+                la = la_mult(i, min((geo.dist[w][i] for w in myW), default=LA_MAX)) if P["la_siege"] else 1.0
+                siege.append(((P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i) * la, i))
         ring = set()
         if not (P["siege_ring_eco"] and w_cost(me) > w_cost(opp)):
             for s in spawn_opp:
@@ -940,6 +987,8 @@ def decide(view, init):
                         continue           # 160턴 안에 닿지 못한다
                     if bld[t]["owner"] == opp and d < left:
                         s *= 2             # 중립화(상대 −) 후 점령(나 +)까지 기한 안에 끝난다
+                if P["lookahead"]:
+                    s *= la_mult(t, d)
                 if P["frontier_targets"]:
                     s *= hold_mult(t, d)
                 s /= d + P["dist_offset"]

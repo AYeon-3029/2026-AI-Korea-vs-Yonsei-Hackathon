@@ -239,7 +239,13 @@ P = {
     "f_no_station_wait": False,    # TELE 가 이미 쓰인 턴에 F 는 역 위에서 기다리지 않고 걷는다
     # 방어 반응(적 F 요격·위협 건물 경계·진입 차단). False 는 실제 서버 상대 모방용(위협에 2턴 안 반응 12~24%, tools/real_react.py)
     "react": True,
-    "siege_spread": 1,             # 남는 W 를 상위 몇 개 공성 목표(가장 가까운 곳)로 나눌지. 1 = v14(최우선 목표 하나)
+    # 공학관 비대칭(초반 W 격차 분해: 주원인이 W 단가): 2개여도 할인은 겹치지 않고, 하나뿐인 것을 잃으면 단가 2 → 3.
+    "eng_last_extra": 0,           # 우리 공학관이 하나뿐이면 진입 차단 반경을 이만큼 더 넓힌다
+    "eng_last_w": 0.0,             # 그 차단 작업 가치 가산
+    "eng_last_need": 0,            # 그 차단 인원 여유
+    "eng_deny_w": 0.0,             # 상대 공학관이 하나뿐이면 그 공학관 F 목표·공성 가치 × (1 + eng_deny_w)
+    "plaza_bonus": 0.0,           # 광장 가치 가산(점수 3 고정·점령 비용 4). 0 = v14
+    "siege_spread": 1,            # 남는 W 를 상위 몇 개 공성 목표(가장 가까운 곳)로 나눌지. 1 = v14(최우선 목표 하나)
     "early_eco_w": 0.0,            # early_eco_turn 까지 학생회관·공학관 F 목표 가치 × (1 + early_eco_w). 0 = 끔
     "early_eco_turn": 40,
     "hub_frac": 0.0,              # 거점 방어(사용자 제안): 남는 W 중 우리 건물 쌍 사이 거점에 둘 비율. 0 = 끔
@@ -453,6 +459,8 @@ def decide(view, init):
             # 점수는 160턴 스냅샷이다. 기능 효과(할인·수입·보급·역)는 남은 턴에 거의 쓰이지 않는다.
             return v
         t = b["type"]
+        if t == "PLAZA":
+            v += P["plaza_bonus"]          # 초반 진단: 진 경기에서 상대가 광장을 먼저 잡는다(22.1 vs 이긴 경기 24.6)
         if t == "HALL":
             v += P["hall_bonus"] * remain
         elif t == "DEPOT" and b["id"] not in mem.depot_got:
@@ -1186,7 +1194,9 @@ def decide(view, init):
                 continue
             k = min((geo.dist[e][b] for e in enF), default=INF)
             eco = P["eco_block_extra"] and bb["type"] in ("HALL", "ENG")
-            if k > P["f_block"] + (P["eco_block_extra"] if eco else 0):
+            # 마지막 공학관: 잃으면 W 단가 2 → 3(50%↑). 20~40턴 W 격차의 주원인이 단가 차(이긴 경기 2.05:2.18, 진 경기 2.20:2.06)
+            last_eng = bb["type"] == "ENG" and len(owned(me, "ENG")) == 1
+            if k > P["f_block"] + (P["eco_block_extra"] if eco else 0) + (P["eng_last_extra"] if last_eng else 0):
                 continue
             need = sum(c for j, c in enW.items() if geo.dist[j][b] <= k) + 1 + P["block_extra"]
             if P["block_spawn"] and any(geo.dist[s][b] <= k for s in spawn_opp):
@@ -1197,7 +1207,8 @@ def decide(view, init):
                 timely = sum(c for i, c in w_pool.items() if c > 0 and geo.dist[i][b] <= k)
                 if timely < need:
                     continue
-            jobs.append((P["block_worth"] + value(bb) + (P["eco_block_worth"] if eco else 0.0), b, need, k, -1))
+            jobs.append((P["block_worth"] + value(bb) + (P["eco_block_worth"] if eco else 0.0)
+                         + (P["eng_last_w"] if last_eng else 0.0), b, need + (P["eng_last_need"] if last_eng else 0), k, -1))
     if P["hold_new"]:
         en_cells = list(enF) + list(enW)
         for b, bb in bld.items():
@@ -1346,6 +1357,8 @@ def decide(view, init):
                 if P["retake_w"] and home_eco(i):
                     sv *= 1.0 + P["retake_w"]
                 sv *= raid_mult(i) * standoff_mult(i)
+                if P["eng_deny_w"] and b["type"] == "ENG" and len(owned(opp, "ENG")) == 1:
+                    sv *= 1.0 + P["eng_deny_w"]   # 상대의 마지막 공학관: 빼앗으면 상대 W 단가 2 → 3
                 if comeback:
                     sv *= P["cb_siege_mult"]
                 if P["la_short"]:
@@ -1476,6 +1489,8 @@ def decide(view, init):
             if P["retake_w"] and home_eco(i):
                 v *= 1.0 + P["retake_w"]
             v *= raid_mult(i)
+            if P["eng_deny_w"] and bld[i]["type"] == "ENG" and len(owned(opp, "ENG")) == 1:
+                v *= 1.0 + P["eng_deny_w"]
         v *= standoff_mult(i)
         if P["early_eco_w"] and view.turn <= P["early_eco_turn"] and bld[i]["type"] in ("HALL", "ENG"):
             # 초반 경제 건물 선점: 승패가 15~40턴에 갈리고 패배의 93% 가 수입 열세(tools/macro/diagnose.py)

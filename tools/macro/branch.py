@@ -69,7 +69,20 @@ OPPS = {
     "srv13_press": ("v13", SRV12_PRESS),
     "srv13_eco": ("v13", SRV12_ECO),
     "v10": ("v10", {}),
+    # 극단 스타일 상대(상대 유형 적응의 상한 측정용)
+    "x_rush": ("v13", {"max_f": 3, "min_f": 2, "w_margin": 40, "guard_radius": 4, "siege_bld_bonus": 14.0,
+                       "siege_ring_value": 8.0, "risk_local_w": 0.0}),
+    "x_turtle": ("v13", {"siege": False, "guard_radius": 30, "w_margin": 12}),
+    "x_fswarm": ("v13", {"max_f": 10, "min_f": 8, "min_w": 2, "w_margin": 6}),
+    "x_eco": ("v13", {"eng_bonus": 25.0, "hall_bonus": 25.0,
+                      "deny": {"ENG": 8.0, "LIBRARY": 1.5, "HALL": 8.0, "HOSPITAL": 1.0}}),
+    "x_center": ("v13", {"center_expect": 4.0, "side_expect": 0.8}),
+    "x_greedy": ("v13", {"risk_local_w": 0.0, "enemy_owned_mult": 3.0, "dist_offset": 1.5}),
+    "x_egf": ("v13", {"eg_f_turn": 130, "eg_max_f": 12, "eg_min_f": 10}),
+    "x_press": ("v13", {"guard_radius": 6, "siege_bld_bonus": 12.0, "siege_ring_value": 7.0, "w_margin": 36,
+                        "escort_extra": 6}),
 }
+XOPPS = ["x_rush", "x_turtle", "x_fswarm", "x_eco", "x_center", "x_greedy", "x_egf", "x_press"]
 POOL = ["v13", "srv12_press", "srv12_eco", "srv12_egf", "b72", "v11"]
 
 

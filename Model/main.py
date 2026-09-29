@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v15.
+"""깃발 대항전 전략 봇 v16.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -37,6 +37,9 @@
 17. v15: v14 맞춤 공격자 탐색(수비적 경제형 #291·#239 가 v14 상대 0.56) → 현실 풀 + 공격자로 Optuna 8차 #153.
     F 상한 4(30턴까지 5), 학생회관 11.2·공학관 10.2, 경제 건물 차단 가치 4.4(반경 2), 탈환 가중 0.77, 전투병 여유 20,
     F 우리 건물 통과 회피(f_own_R 3)·역 대기 안 함. 현실 풀 새 시드 +0.017±0.007(7200쌍), 공격자 +0.037, 실제 상태 +0.004~0.008.
+18. v16: 9/29 20시 실전 패배(상위 공세형 상대에게 학생회관·공학관을 잃고 탈환이 계속 늦춰짐, 사용자 관찰) → 경제 열세 공격대(eco_strike 3):
+    우리 학생회관(공학관) 수가 상대보다 적으면 아군 W 에서 가장 가까운 적 소유 학생회관·공학관(진영 무관)에 '2칸 안 적 W + 3' 명을
+    최우선 작업으로 모은다. v15 대비 현실 풀 새 시드 +0.033±0.005(7200쌍), 공세형 대리 풀 +0.030±0.008(3600쌍).
 """
 import json
 import math
@@ -263,6 +266,28 @@ P = {
     "raid_D": 10,
     "raid_from": "spawn",          # 근접도 기준: spawn(우리 생산 거점) | army(가장 가까운 아군 W)
     "plaza_standoff": 0.0,         # 광장 3칸 안 적 W 가 아군보다 많으면(대치) 광장 가치 × (1 − plaza_standoff)
+    # --- dev12: 9/29 20시 실전 패배(신촌을못가·참새튀김기·AIKU) 사용자 관찰 대책. 모두 0/False = v15 ---
+    # 경제 열세 탈환(사용자: 학생회관·공학관이 없을 때는 적 진영의 것이든 우리 진영의 것이든 되찾는 것이 먼저):
+    # 우리 학생회관(공학관) 수가 상대보다 적으면 적 소유 학생회관(공학관) 전부의 F 목표·공성 가치 × (1 + eco_def_w), 위험 감점 × (1 − eco_def_risk)
+    "eco_def_w": 0.0,
+    "eco_def_risk": 0.0,
+    # 그때 가장 가까운 적 소유 학생회관·공학관 하나에 공격대 작업(인원 = 2칸 안 적 W + eco_strike, 가치 = 건물 가치 + eco_strike_worth). 0 = 끔
+    "eco_strike": 3,  # v16: 0 → 3
+    "eco_strike_worth": 6.0,
+    "eco_strike_stage": 2,         # 공격대가 모자라면 목표 이 칸 밖에서 모인다
+    "eco_strike_R": 2,             # 목표 이 칸 안 적 W 를 필요 인원에 넣는다
+    # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
+    # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
+    "strike_w": 0,
+    "strike_min": 3,
+    "strike_worth": 8.0,
+    "strike_dl": 1,                # 타격 도착 기한(턴). 2 면 2칸 떨어진 무리에도 한 칸 다가선다(다음 턴 다시 판단)
+    # F 겹침 방지(사용자: 30턴부터 F 2명이 한 칸에 겹쳐 다님 — 적 W 하나에 둘 다 잡힌다): 같은 거리 다음 칸 중 이번 턴 다른 F 가 가는 칸을 피한다
+    "f_spread": False,
+    # 우리 쪽 빈 중립 건물 쓸기(사용자: AIKU 시드에서 구석 안암역을 끝까지 안 먹음): 우리 본진이 상대 본진보다 home_margin 이상 가깝고
+    # 4칸 안에 적 유닛이 없는 중립 건물의 F 목표 가치 × (1 + home_neutral_w). 0 = 끔
+    "home_neutral_w": 0.0,
+    "home_margin": 3,
     "eg_def_turn": 999,
     "eg_def": {"w_margin": 32, "guard_radius": 25, "siege_bld_bonus": 4.0, "siege_ring_value": 1.5},
 }
@@ -417,6 +442,8 @@ class Memory:
 
 GEO = None
 MEM = None
+DBG_TURNS = set()
+DBG = []   # 진단용(tools/macro/rerun.py --dump): W 작업 배정 기록. 대회 동작과 무관
 
 # 진단 계측(PLAN-frontier 단계 0): BOT_STATS=<폴더> 이면 매 턴 누적 지표를 <폴더>/<pid>.json 에 덮어쓴다.
 # 제출 환경에서는 설정되지 않으므로 아무 일도 하지 않는다.
@@ -537,6 +564,19 @@ def decide(view, init):
     def home_eco(b):
         """우리 본진 쪽(본진까지 거리 < 적 본진까지 거리)의 학생회관·공학관."""
         return bld[b]["type"] in ("HALL", "ENG") and geo.dist[base_me][b] < geo.dist[base_opp][b]
+    eco_short = {t for t in ("HALL", "ENG") if len(owned(me, t)) < len(owned(opp, t))} if (
+        P["eco_def_w"] or P["eco_def_risk"] or P["eco_strike"]) else set()
+
+    def eco_def(b):
+        """경제 열세 탈환 대상: 우리가 수에서 밀리는 종류의 적 소유 학생회관·공학관(위치 무관)."""
+        return bld[b]["owner"] == opp and bld[b]["type"] in eco_short
+
+    def home_neutral(b):
+        if not P["home_neutral_w"] or bld[b]["owner"] != "N":
+            return False
+        if geo.dist[base_me][b] + P["home_margin"] > geo.dist[base_opp][b]:
+            return False
+        return not any(geo.dist[e][b] <= 4 for e in list(enF) + list(enW))
     can_tele = P["use_tele"] and len(my_stations) >= TELE_MIN_ST
 
     # 2b. 도달 지도(PLAN-frontier 단계 1): 누가 먼저 갈 수 있는가. 스위치가 모두 꺼져 있으면 계산하지 않는다.
@@ -866,6 +906,8 @@ def decide(view, init):
         lw = eff_local_w
         if P["retake_risk"] and bld.get(b, {}).get("owner") == opp and home_eco(b):
             lw *= max(0.0, 1.0 - P["retake_risk"])
+        if P["eco_def_risk"] and b in bld and eco_def(b):
+            lw *= max(0.0, 1.0 - P["eco_def_risk"])
         return 1.0 / (1.0 + P["risk_depth_w"] * max(0, depth) + lw * max(0, local) + extra)
 
     # 5. 이동 도우미(일반 이동 + 역 순간이동)
@@ -874,6 +916,8 @@ def decide(view, init):
     tele_state = {"used": False, "wait": {}, "commit": {}}
     # 역별 대기 인원(턴 시작 시 역 칸 위 아군 F·W) — TELE 는 턴당 1회·최대 TELE_MAX 명뿐이다
     tele_q = {a: myW.get(a, 0) + myF.get(a, 0) for a in my_stations} if P["tele_queue"] else {}
+
+    f_dest = {}                        # 이번 턴 F 가 도착할 칸(겹침 방지용)
 
     def add_move(i, kind, n, d):
         key = (i, kind, d)
@@ -957,6 +1001,10 @@ def decide(view, init):
 
     def walk(i, kind, n, goal, safe, out):
         prefer = pref_of(kind)
+        if kind == "F" and P["f_spread"]:
+            base_s = prefer
+            # 이번 턴 다른 F 가 가기로 한 칸을 뒤로(안정 정렬 — 나머지 동률 처리는 그대로)
+            prefer = lambda v: (f_dest.get(v, 0) > 0,) + (base_s(v) if base_s else ())
         if kind == "F" and P["f_own_R"]:
             base_f = prefer
             # 위험 여부만 앞에 둔다. 정렬은 안정적이므로 위험하지 않은 후보끼리는 원래 순서(대칭 동률 처리)가 그대로 유지된다.
@@ -1010,6 +1058,9 @@ def decide(view, init):
         else:
             add_move(i, kind, n, st[0])
             out.append((st[1], n))
+        if kind == "F":
+            dst = i if st is None else st[1]
+            f_dest[dst] = f_dest.get(dst, 0) + n
 
     def advance(i, kind, n, goal, safe=None):
         """n 명을 goal 쪽으로 보내고 [(도착 칸, 인원)] 을 돌려준다.
@@ -1110,6 +1161,9 @@ def decide(view, init):
         모인 인원이 need 에 못 미치면 stage_dist 칸 밖에서 대기하며 모은다."""
         near_ws = sorted((eff_dist(i, g), geo.nkey(i), i)
                          for i, c in w_pool.items() if c > 0 and geo.dist[i][g] < INF)
+        if DBG is not None and view.turn in DBG_TURNS:
+            DBG.append((wmode.get("tag", "?"), geo.xy(g), bld[g]["type"][:4] if g in bld else "", need,
+                        sum(w_pool[t[2]] for t in near_ws), [(geo.xy(t[2]), w_pool[t[2]], t[0]) for t in near_ws[:4]]))
         timely = [t for t in near_ws if t[0] <= deadline]
         if deadline < INF and sum(w_pool[t[2]] for t in timely) >= need:
             near_ws = timely
@@ -1233,14 +1287,34 @@ def decide(view, init):
         for i, b in bld.items():
             if b["owner"] == me and (P["garrison_types"] == "all" or b["type"] in ("HALL", "ENG")):
                 jobs.append((P["garrison_w"] + value(b), i, P["garrison_n"], INF, -1))
+    if P["eco_strike"] and eco_short and myW:
+        # 경제 열세: 가장 가까운(아군 W 기준) 적 소유 학생회관·공학관 하나에 이길 수 있는 공격대를 모은다(집결 2칸)
+        cands = [b for b in bld if eco_def(b)]
+        if cands:
+            g = min(cands, key=lambda b: (min(geo.dist[w][b] for w in myW), geo.nkey(b)))
+            en = sum(c for j, c in enW.items() if geo.dist[j][g] <= P["eco_strike_R"])
+            jobs.append((value(bld[g]) + P["eco_strike_worth"], g, max(threat[g], en) + P["eco_strike"], INF,
+                         P["eco_strike_stage"]))
+    if P["strike_w"] and P["react"]:
+        # 대기 중인 적 무리: 지난 턴에도 같은 칸에 비슷한 수(절반 이상)가 있었고 우리 건물 2칸 안. 이번 턴 닿는 아군만으로 이길 때만 친다.
+        mine_b = [b for b, bb in bld.items() if bb["owner"] == me]
+        for e, c in enW.items():
+            if c < P["strike_min"] or 2 * mem.prev_enW.get(e, 0) < c:
+                continue
+            near_b = [b for b in mine_b if geo.dist[e][b] <= 2]
+            if not near_b:
+                continue
+            worth = P["strike_worth"] + max(value(bld[b]) for b in near_b) + (1.0 if enF.get(e, 0) else 0.0)
+            jobs.append((worth, e, threat[e] + P["strike_w"], P["strike_dl"], -1))
     jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
     done_goals = set()
+    wmode["tag"] = "job"
     for worth, g, need, deadline, stage in jobs:
         if g in done_goals:
             continue
         pool = sum(c for i, c in w_pool.items() if c > 0 and geo.dist[i][g] <= deadline)
-        if deadline <= 1 and pool < need:
+        if (deadline <= 1 or (P["strike_w"] and deadline <= P["strike_dl"] and g in enW)) and pool < need:
             continue
         done_goals.add(g)
         send_w(g, need, stage, deadline)
@@ -1308,6 +1382,7 @@ def decide(view, init):
         guard_posts = [(-value(b), geo.nkey(p), p) for p, b in bld.items()
                        if b["owner"] == me and p not in done_goals and opp_f_reach(p, H)]
     fm = view.turn >= P["front_mass_turn"] and not (hold or rapid)
+    wmode["tag"] = "guard"
     for _, _, p in ([] if hold or rapid or fm or not P["react"] else sorted(guard_posts)):
         if not any(c > 0 for c in w_pool.values()):
             break
@@ -1368,6 +1443,8 @@ def decide(view, init):
                 sv = (P["siege_bld_bonus"] + bonus + value(b)) * risk_mult(i) * la
                 if P["retake_w"] and home_eco(i):
                     sv *= 1.0 + P["retake_w"]
+                if P["eco_def_w"] and eco_def(i):
+                    sv *= 1.0 + P["eco_def_w"]
                 sv *= raid_mult(i) * standoff_mult(i)
                 if P["eng_deny_w"] and b["type"] == "ENG" and len(owned(opp, "ENG")) == 1:
                     sv *= 1.0 + P["eng_deny_w"]   # 상대의 마지막 공학관: 빼앗으면 상대 W 단가 2 → 3
@@ -1434,6 +1511,7 @@ def decide(view, init):
                 send_w(spot, P["feint_n"], -1)
         else:
             mem.feint = None
+    wmode["tag"] = "siege"
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):
             break
@@ -1463,6 +1541,7 @@ def decide(view, init):
                 if w_pool[i] > 0:
                     send_w(center, w_pool[i], -1)
     # 그래도 남은 전투병은 가장 가치 높은 공성 목표에 합류
+    wmode["tag"] = "rest"
     if siege:
         top = siege[0][1]
         # 동시 다발 공성: 남는 병력을 상위 siege_spread 개 목표 중 가장 가까운 곳으로 나눈다(1 = v14, 최우선 목표 하나로 전부).
@@ -1500,10 +1579,14 @@ def decide(view, init):
             v *= P["enemy_owned_mult"]
             if P["retake_w"] and home_eco(i):
                 v *= 1.0 + P["retake_w"]
+            if P["eco_def_w"] and eco_def(i):
+                v *= 1.0 + P["eco_def_w"]
             v *= raid_mult(i)
             if P["eng_deny_w"] and bld[i]["type"] == "ENG" and len(owned(opp, "ENG")) == 1:
                 v *= 1.0 + P["eng_deny_w"]
         v *= standoff_mult(i)
+        if home_neutral(i):
+            v *= 1.0 + P["home_neutral_w"]
         if P["early_eco_w"] and view.turn <= P["early_eco_turn"] and bld[i]["type"] in ("HALL", "ENG"):
             # 초반 경제 건물 선점: 승패가 15~40턴에 갈리고 패배의 93% 가 수입 열세(tools/macro/diagnose.py)
             v *= 1.0 + P["early_eco_w"]

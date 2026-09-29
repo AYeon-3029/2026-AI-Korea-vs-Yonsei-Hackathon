@@ -175,3 +175,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+# 9/29 20시 실전 패배 상대(신촌을못가 fwd 0.26 · 참새튀김기 0.40 · AIKU 0.49)를 닮은 공세형 대리(tools/macro/proxy_style.py)
+_PUSH = {"guard_radius": 6, "siege_bld_bonus": 14.0, "siege_ring_value": 6.0, "w_margin": 36, "risk_local_w": 0.1}
+OPPS["p_press"] = ("dev11", _PUSH)
+OPPS["p_raid"] = ("dev11", dict(_PUSH, raid_w=2.0, raid_D=12))
+OPPS["p_lodge"] = ("dev11", dict(_PUSH, raid_w=2.0, raid_D=12, hold_new=8, hold_R=3))
+OPPS["p_rush"] = ("dev11", dict(_PUSH, guard_radius=4, siege_ring_value=9.0, w_margin=44, risk_local_w=0.0, max_f=4, min_f=3))
+OPPS["p_center"] = ("dev11", dict(_PUSH, center_expect=3.5, plaza_bonus=3.0))
+PUSH_POOL = ["p_press", "p_raid", "p_lodge", "p_rush", "p_center"]

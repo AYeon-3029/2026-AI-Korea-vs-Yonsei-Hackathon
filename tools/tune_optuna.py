@@ -130,6 +130,40 @@ def space_v3(trial: optuna.Trial) -> dict:
     }
 
 
+def space_v4(trial: optuna.Trial) -> dict:
+    """4차 탐색(v12 이후): v12 값 둘레 + 아직 튜닝하지 않은 엄호 거리·공성 집결 거리·TELE 이득·경계 여유."""
+    return {
+        "max_f": trial.suggest_int("max_f", 3, 6),
+        "min_f": trial.suggest_int("min_f", 2, 5),
+        "min_w": trial.suggest_int("min_w", 2, 7),
+        "w_margin": trial.suggest_int("w_margin", 20, 34),
+        "guard_radius": trial.suggest_int("guard_radius", 11, 19),
+        "dist_offset": trial.suggest_float("dist_offset", 3.5, 6.5),
+        "hall_bonus": trial.suggest_float("hall_bonus", 7.0, 12.0),
+        "eng_bonus": trial.suggest_float("eng_bonus", 8.0, 14.0),
+        "lib_bonus": trial.suggest_float("lib_bonus", 1.5, 4.0),
+        "depot_bonus": trial.suggest_float("depot_bonus", 1.0, 3.0),
+        "hosp_bonus": trial.suggest_float("hosp_bonus", 1.5, 4.0),
+        "center_expect": trial.suggest_float("center_expect", 2.2, 3.2),
+        "side_expect": trial.suggest_float("side_expect", 1.0, 1.4),
+        "enemy_owned_mult": trial.suggest_float("enemy_owned_mult", 1.1, 1.8),
+        "enemy_f_penalty": trial.suggest_float("enemy_f_penalty", 0.5, 1.0),
+        "siege_bld_bonus": trial.suggest_float("siege_bld_bonus", 4.5, 9.5),
+        "siege_ring_value": trial.suggest_float("siege_ring_value", 2.0, 5.0),
+        "chase_mult": trial.suggest_float("chase_mult", 1.1, 2.0),
+        "endgame_turn": trial.suggest_int("endgame_turn", 148, 161),
+        "escort_bonus": trial.suggest_float("escort_bonus", 0.8, 3.5),
+        "escort_extra": trial.suggest_int("escort_extra", 2, 6),
+        "risk_local_w": trial.suggest_float("risk_local_w", 0.04, 0.25),
+        "block_worth": trial.suggest_float("block_worth", 3.0, 10.0),
+        # 새로 탐색
+        "escort_dist": trial.suggest_int("escort_dist", 1, 3),
+        "siege_stage": trial.suggest_int("siege_stage", 0, 4),
+        "tele_min_gain": trial.suggest_int("tele_min_gain", 1, 4),
+        "guard_extra": trial.suggest_int("guard_extra", 0, 2),
+    }
+
+
 def _exploiter(overrides):
     """익스플로이터(v10 을 이기는 것만 목표로 하는 스파링 상대)용 공간: v2 에서 일부 범위만 특정 전략 쪽으로 좁힌다."""
     def f(trial):
@@ -157,7 +191,7 @@ class _Rec:
         return self.t.suggest_categorical(name, self.o.get(name, choices))
 
 
-SPACES = {"v1": space, "v2": space_v2, "v3": space_v3,
+SPACES = {"v1": space, "v2": space_v2, "v3": space_v3, "v4": space_v4,
           # 익스플로이터: 돌격형 / 경제형 / 깃발병 물량형
           "x_atk": _exploiter({"guard_radius": (0, 5), "siege_bld_bonus": (8.0, 20.0),
                                "siege_ring_value": (4.0, 10.0), "w_margin": (5, 30)}),

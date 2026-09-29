@@ -52,9 +52,22 @@ VARIANTS = {
     "srv_eco": ("v11", {"eng_bonus": 16.0, "hall_bonus": 16.0,
                         "deny": {"ENG": 6.0, "LIBRARY": 1.5, "HALL": 6.0, "HOSPITAL": 1.0}}),
     "srv_egf": ("v11", {"eg_f_turn": 145, "eg_max_f": 10, "eg_min_f": 8}),
+    # v12 기반 모방 변형 + v12 와 직접 대결 동률인 공세형 강자(Optuna B #72, srv 풀로 튜닝)
+    "srv12_press": ("v12", {"guard_radius": 8, "siege_bld_bonus": 10.0, "siege_ring_value": 6.0, "w_margin": 34}),
+    "srv12_eco": ("v12", {"eng_bonus": 16.0, "hall_bonus": 16.0,
+                          "deny": {"ENG": 6.0, "LIBRARY": 1.5, "HALL": 6.0, "HOSPITAL": 1.0}}),
+    "srv12_egf": ("v12", {"eg_f_turn": 145, "eg_max_f": 10, "eg_min_f": 8}),
+    "b72": ("v11", {"max_f": 4, "min_f": 4, "min_w": 4, "w_margin": 23, "guard_radius": 14, "dist_offset": 4.2376,
+                    "hall_bonus": 7.5348, "eng_bonus": 8.3535, "lib_bonus": 2.3879, "depot_bonus": 2.4153,
+                    "hosp_bonus": 3.9643, "center_expect": 2.6741, "side_expect": 1.0388, "enemy_owned_mult": 1.837,
+                    "enemy_f_penalty": 0.4008, "siege_bld_bonus": 9.9713, "siege_ring_value": 5.4338,
+                    "chase_mult": 1.501, "endgame_turn": 158, "escort_bonus": 2.6751, "escort_extra": 4,
+                    "risk_local_w": 0.2865, "f_block": 2, "block_worth": 3.795}),
 }
 # 실제 상대 모방 풀(비대칭 상대 — 상황 조건 스위치도 이 풀로만 잴 수 있다)
 SRV = ["srv_press", "srv_eco", "srv_egf", "v10", "v9"]
+# v12 이후 기준 풀: v12 기반 모방 3종 + 공세형 강자 b72 + v11
+SRV2 = ["srv12_press", "srv12_eco", "srv12_egf", "b72", "v11"]
 
 
 def opp_cmd(name: str) -> str:
@@ -127,7 +140,7 @@ def main() -> None:
     p.add_argument("--stats", default="", help="BOT_STATS 기록 폴더(비우고 시작). 끝에 상대별 요약 출력")
     args = p.parse_args()
 
-    opps = {"league": LEAGUE, "league6": LEAGUE6, "srv": SRV}.get(args.opps) or args.opps.split(",")
+    opps = {"league": LEAGUE, "league6": LEAGUE6, "srv": SRV, "srv2": SRV2}.get(args.opps) or args.opps.split(",")
     if args.stats:
         shutil.rmtree(args.stats, ignore_errors=True)
     res = evaluate(args.bot, opps, args.seeds, args.workers, args.params, args.stats)

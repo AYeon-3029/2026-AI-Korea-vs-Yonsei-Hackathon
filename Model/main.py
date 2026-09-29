@@ -239,7 +239,10 @@ P = {
     "f_no_station_wait": False,    # TELE 가 이미 쓰인 턴에 F 는 역 위에서 기다리지 않고 걷는다
     # 방어 반응(적 F 요격·위협 건물 경계·진입 차단). False 는 실제 서버 상대 모방용(위협에 2턴 안 반응 12~24%, tools/real_react.py)
     "react": True,
-    "hub_frac": 0.0,               # 거점 방어(사용자 제안): 남는 W 중 우리 건물 쌍 사이 거점에 둘 비율. 0 = 끔
+    "siege_spread": 1,             # 남는 W 를 상위 몇 개 공성 목표(가장 가까운 곳)로 나눌지. 1 = v14(최우선 목표 하나)
+    "early_eco_w": 0.0,            # early_eco_turn 까지 학생회관·공학관 F 목표 가치 × (1 + early_eco_w). 0 = 끔
+    "early_eco_turn": 40,
+    "hub_frac": 0.0,              # 거점 방어(사용자 제안): 남는 W 중 우리 건물 쌍 사이 거점에 둘 비율. 0 = 끔
     "hub_span": 3,                 # 짝지을 두 건물 사이 최대 거리 = 2 × hub_span
     "hub_alert": 8,                # 두 건물 중 하나라도 이 거리 안에 적 유닛이 있을 때만 거점을 운영
     "feint_n": 0,                # 미끼 W 인원(본대 공성 목표에서 feint_sep 칸 이상 떨어진 적 건물 옆에서 위협만 만든다). 0 = 끔
@@ -1437,9 +1440,13 @@ def decide(view, init):
     # 그래도 남은 전투병은 가장 가치 높은 공성 목표에 합류
     if siege:
         top = siege[0][1]
+        # 동시 다발 공성: 남는 병력을 상위 siege_spread 개 목표 중 가장 가까운 곳으로 나눈다(1 = v14, 최우선 목표 하나로 전부).
+        # 실제 상대는 우리 계보보다 덜 지킨다(F 1칸 옆 도착 → 3턴 안 탈취 0.50) — 여러 곳을 동시에 누르면 더 많이 뺏을 수 있다.
+        tops = [g for _, g in siege[:max(1, P["siege_spread"])]]
         for i in sorted(w_pool, key=geo.nkey):
             if w_pool[i] > 0:
-                send_w(top, w_pool[i], -1)
+                g = top if len(tops) == 1 else min(tops, key=lambda t: (geo.dist[i][t], geo.nkey(t)))
+                send_w(g, w_pool[i], -1)
 
     # 7. 깃발병 배치
     def safe(v):
@@ -1470,6 +1477,9 @@ def decide(view, init):
                 v *= 1.0 + P["retake_w"]
             v *= raid_mult(i)
         v *= standoff_mult(i)
+        if P["early_eco_w"] and view.turn <= P["early_eco_turn"] and bld[i]["type"] in ("HALL", "ENG"):
+            # 초반 경제 건물 선점: 승패가 15~40턴에 갈리고 패배의 93% 가 수입 열세(tools/macro/diagnose.py)
+            v *= 1.0 + P["early_eco_w"]
         if finishing and bld[i]["owner"] == opp:
             v *= P["finish_mult"]
         if enF.get(i, 0) and cover[i] <= threat[i]:

@@ -82,6 +82,19 @@ OPPS = {
     "x_press": ("v13", {"guard_radius": 6, "siege_bld_bonus": 12.0, "siege_ring_value": 7.0, "w_margin": 36,
                         "escort_extra": 6}),
 }
+OPPS["v14"] = ("v14", {})
+# 현실 풀(실제 상대의 'F 1칸 옆 도착 → 3턴 안 탈취 허용' 0.50 에 맞춤): 중간형 6 + 반응형 강자 6 (tools/macro/tune6.py 와 같음)
+_SEMI = {"f_block": 0, "eco_block_extra": 0}
+OPPS["v9"] = ("v9", {})
+OPPS["semi14"] = ("dev5", _SEMI)
+OPPS["semi14_g6"] = ("dev5", dict(_SEMI, guard_radius=6))
+OPPS["semi14_press"] = ("dev5", dict(_SEMI, guard_radius=8, siege_bld_bonus=12.0, siege_ring_value=6.0, w_margin=34))
+OPPS["semi14_eco"] = ("dev5", dict(_SEMI, eng_bonus=16.0, hall_bonus=16.0,
+                                   deny={"ENG": 6.0, "LIBRARY": 1.5, "HALL": 6.0, "HOSPITAL": 1.0}))
+OPPS["srv14_press"] = ("v14", SRV12_PRESS)
+OPPS["srv14_eco"] = ("v14", SRV12_ECO)
+REAL_POOL = ["semi14", "semi14_g6", "semi14_press", "semi14_eco", "v10", "v9",
+             "v14", "srv14_press", "srv14_eco", "b72", "x_press", "x_eco"]
 XOPPS = ["x_rush", "x_turtle", "x_fswarm", "x_eco", "x_center", "x_greedy", "x_egf", "x_press"]
 POOL = ["v13", "srv12_press", "srv12_eco", "srv12_egf", "b72", "v11"]
 

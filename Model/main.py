@@ -120,6 +120,8 @@ P = {
     # 광장·방송국을 함께 지원 범위에 둔다). 칸의 방어 가치 = cov_R 칸 안 '적이 근처에 있는 내 건물' 가치 합.
     "cov_route": False,            # W 최단 경로 동률을 경로 전체 방어 가치 합으로 깬다
     "cov_R": 2,
+    "cov_route_mode": "primary",   # primary = 방어 가치가 첫 기준(v11 구현) | secondary = 뭉쳐 다니기 다음 기준
+    "cov_lane": 0.0,               # 급하지 않은 이동의 차선 변경 문턱(도착 칸 방어 가치 증가량). 0 = 끔
     "cov_side": False,             # 기한 없는 이동에서 방어 가치가 오르는 옆걸음(+1턴)을 허용
     "cov_lambda": 3.0,             # 옆걸음 비용(경로 방어 가치 합 단위)
     "cov_neutral": 0.0,            # 경합 중립 건물(양쪽 유닛이 6칸 안)도 이 배율로 방어 가치에 넣는다(seed 3608 광장). 0 = 내 건물만
@@ -230,6 +232,18 @@ P = {
     "rush_k": 0.1173,                 # rush_turn 까지 적 W − 아군 W 격차 1명당 최소 F 를 rush_k 명 줄인다((8) 초반 러시: 40턴 W 33 대 78) v14: 0.0 → 0.1173
     "rush_turn": 40,
     # 경제 기습(사용자 제안): 적 학생회관·공학관이 가까우면 광장 대치보다 먼저 빼앗아 수입·W 단가 우위로 광장을 되찾는다.
+    # 깃발 뽑힘 방지(사용자 제안): 우리 건물 위 우리 F 는 적 W 하나에 죽으며 건물이 즉시 중립이 된다.
+    # 실측(v14, 480경기): 뽑힘 경기당 0.27 = 이번 턴 진입 0.09 + 머물던 F 0.18(87% 역 — W 가 TELE 를 먼저 써 F 가 역에서 대기).
+    "f_own_R": 0,                  # F 가 목표 아닌 우리 건물 칸을 지날 때, R 칸 안 적 W > 그 칸 엄호면 같은 거리의 다른 칸을 먼저 고른다. 0 = 끔
+    "f_own_wait": False,           # 위의 경우 대안이 없으면 한 턴 기다린다(강한 버전)
+    "f_no_station_wait": False,    # TELE 가 이미 쓰인 턴에 F 는 역 위에서 기다리지 않고 걷는다
+    # 방어 반응(적 F 요격·위협 건물 경계·진입 차단). False 는 실제 서버 상대 모방용(위협에 2턴 안 반응 12~24%, tools/real_react.py)
+    "react": True,
+    "hub_frac": 0.0,               # 거점 방어(사용자 제안): 남는 W 중 우리 건물 쌍 사이 거점에 둘 비율. 0 = 끔
+    "hub_span": 3,                 # 짝지을 두 건물 사이 최대 거리 = 2 × hub_span
+    "hub_alert": 8,                # 두 건물 중 하나라도 이 거리 안에 적 유닛이 있을 때만 거점을 운영
+    "feint_n": 0,                # 미끼 W 인원(본대 공성 목표에서 feint_sep 칸 이상 떨어진 적 건물 옆에서 위협만 만든다). 0 = 끔
+    "feint_sep": 5,
     "raid_w": 0.0,                 # 적 소유 학생회관·공학관 가치 × (1 + raid_w × 근접도), 근접도 = max(0, 1 − 우리 생산 거점 거리 / raid_D)
     "raid_D": 10,
     "raid_from": "spawn",          # 근접도 기준: spawn(우리 생산 거점) | army(가장 가까운 아군 W)
@@ -860,6 +874,15 @@ def decide(view, init):
         """W 동거리 후보: 아군 W 가 모이는 칸. 전투는 수가 전부이므로 뭉쳐 다닌다."""
         return (-cover[v], geo.nkey(v))
 
+    def f_own_risky(v, goal):
+        """F 가 목표 아닌 우리 건물 칸 v 에 서면 적 W 에 잡혀 깃발이 뽑힐 위험이 있는가."""
+        if v == goal or v not in bld or bld[v]["owner"] != me:
+            return False
+        R = P["f_own_R"]
+        danger = sum(c for j, c in enW.items() if geo.dist[j][v] <= R)
+        guard = cover[v] + sum(c for j, c in myW.items() if geo.dist[j][v] <= 1)
+        return danger > guard
+
     def pref_of(kind):
         m = P["smart_step"]
         if kind == "F":
@@ -917,11 +940,44 @@ def decide(view, init):
 
     def walk(i, kind, n, goal, safe, out):
         prefer = pref_of(kind)
+        if kind == "F" and P["f_own_R"]:
+            base_f = prefer
+            # 위험 여부만 앞에 둔다. 정렬은 안정적이므로 위험하지 않은 후보끼리는 원래 순서(대칭 동률 처리)가 그대로 유지된다.
+            prefer = lambda v: (f_own_risky(v, goal),) + (base_f(v) if base_f else ())
+            if P["f_own_wait"]:
+                base_safe = safe
+                safe = lambda v: (base_safe is None or base_safe(v)) and not f_own_risky(v, goal)
         if kind == "W" and P["cov_route"] and geo.dist[i][goal] < INF:
             pv = path_cov(goal)
             base_pref = prefer
-            prefer = (lambda v: (-pv[v],) + base_pref(v)) if base_pref else (lambda v: (-pv[v], geo.nkey(v)))
+            if P["cov_route_mode"] == "secondary" and base_pref:
+                # 뭉쳐 다니기(아군 W 가 모이는 칸)를 먼저, 방어 가치는 그다음 기준
+                prefer = lambda v: base_pref(v)[:1] + (-pv[v],) + base_pref(v)[1:]
+            else:
+                prefer = (lambda v: (-pv[v],) + base_pref(v)) if base_pref else (lambda v: (-pv[v], geo.nkey(v)))
         st = step_toward(i, goal, safe, prefer)
+        if kind == "W" and P["cov_lane"] and wmode.get("side_ok") and st is not None and geo.dist[i][goal] < INF:
+            # 차선 변경(사용자 제안: 급하지 않은 이동은 여러 건물을 지원할 수 있는 칸을 지나간다). 격자는 이웃 칸의 목표 거리가 반드시 ±1 이라
+            # 같은 거리의 옆걸음이 없다 → 한 칸 비켰다가(+1) 다음 턴 옆 줄로 전진(−1) = 2턴 추가. 도착 칸 방어 가치가 cov_lane 이상
+            # 엄격히 오를 때만 한다(순환 없음). 다음 턴 이동(v → u)은 mem.lane_next 에 약속해 둔다.
+            cur = geo.dist[i][goal]
+            lane = lane_prev.get(i)
+            if lane is not None and any(v == lane for _, v in geo.nbrs[i]) and geo.dist[lane][goal] < cur:
+                st = next((d, v) for d, v in geo.nbrs[i] if v == lane)
+            else:
+                best = None
+                for d1, v in geo.nbrs[i]:
+                    if geo.dist[v][goal] != cur + 1 or (safe is not None and not safe(v)):
+                        continue
+                    for _, u in geo.nbrs[v]:
+                        if u == i or geo.dist[u][goal] != cur:
+                            continue
+                        gain = cov_val[u] - cov_val[i]
+                        if gain > P["cov_lane"] and (best is None or gain > best[0]):
+                            best = (gain, d1, v, u)
+                if best:
+                    st = (best[1], best[2])
+                    mem.lane_next[best[2]] = best[3]
         if kind == "W" and P["cov_side"] and wmode.get("side_ok") and st is not None:
             # 옆걸음: 거리는 그대로, 방어 가치는 엄격히 오르는 칸만(같은 거리에서 방어 가치가 계속 올라야 하므로 순환 없음)
             pv = path_cov(goal)
@@ -963,6 +1019,9 @@ def decide(view, init):
             tele_state["used"] = True
             out.append((b, k))
             n -= k
+        if n > 0 and kind == "F" and P["f_no_station_wait"]:
+            walk(i, kind, n, goal, safe, out)      # 역 위 F 는 적 W 하나에 깃발이 뽑힌다 — 기다리지 않는다
+            n = 0
         if n > 0:
             # 이번 턴 TELE 를 못 쓰면: 한 턴 기다렸다 TELE 하는 편이 여전히 빠르면 대기
             waited = tele_state["wait"].get(i, 0) if P["tele_queue"] else 0
@@ -982,7 +1041,9 @@ def decide(view, init):
 
     # 방어 가치 지도: 칸마다 cov_R 칸 안 '적 유닛이 6칸 안에 있는 내 건물' 가치 합
     cov_val = [0.0] * geo.n
-    if P["cov_route"] or P["cov_side"]:
+    lane_prev = getattr(mem, "lane_next", {}) if P["cov_lane"] else {}
+    mem.lane_next = {}
+    if P["cov_route"] or P["cov_side"] or P["cov_lane"]:
         en_cells = list(enF) + list(enW)
         my_cells = list(myF) + list(myW)
         for p, b in bld.items():
@@ -1067,7 +1128,7 @@ def decide(view, init):
 
     # 적 깃발병 요격: 다음 목표 건물을 예측해 적보다 먼저(또는 동시에) 도착한다
     jobs = []  # (가치, 목표 칸, 필요 인원, 도착 기한, 집결 거리)
-    for e, c in enF.items():
+    for e, c in (enF.items() if P["react"] else ()):
         if not P["predict"]:
             # v2 방식: 가장 가까운 비적 건물 + 현재 위치
             cands = [i for i, b in bld.items() if b["owner"] != opp and enF.get(i, 0) == 0]
@@ -1115,7 +1176,7 @@ def decide(view, init):
                     continue
                 seen.add(b)
                 jobs.append((value(bld[b]) + P["escort_bonus"], b, threat[b] + P["escort_extra"], INF, -1))
-    if P["f_block"]:
+    if P["f_block"] and P["react"]:
         # 전투는 같은 칸에서만 일어난다. 적 F 가 도착하는 턴에 그 칸 위 아군 W 가 적 W 보다 많아야 건물이 산다.
         for b, bb in bld.items():
             if bb["owner"] != me or enF.get(b, 0) or hopeless(b):
@@ -1221,7 +1282,7 @@ def decide(view, init):
         guard_posts = [(-value(b), geo.nkey(p), p) for p, b in bld.items()
                        if b["owner"] == me and p not in done_goals and opp_f_reach(p, H)]
     fm = view.turn >= P["front_mass_turn"] and not (hold or rapid)
-    for _, _, p in ([] if hold or rapid or fm else sorted(guard_posts)):
+    for _, _, p in ([] if hold or rapid or fm or not P["react"] else sorted(guard_posts)):
         if not any(c > 0 for c in w_pool.values()):
             break
         # 같은 수면 1:1 상쇄로 모두 사라지고 적 F 가 살아남아 중립화한다 → 이기려면 적 + 1 이 필요하다
@@ -1300,8 +1361,51 @@ def decide(view, init):
         for i, b in bld.items():
             if b["owner"] == me:
                 siege.append((value(b), i))
+    # 거점 방어(사용자 제안 그림): 건물마다 병력을 붙이지 않고, 우리 건물 두 개 사이의 1-중심 빈 칸(거점)에 W 를 모아
+    # 어느 쪽이 공격받든 짧은 시간에 지원한다. 적 유닛이 hub_alert 칸 안에 온 건물 쌍만, 남는 W 의 hub_frac 을 가치 비율로 나눈다.
+    if P["hub_frac"] > 0 and any(c > 0 for c in w_pool.values()):
+        en_cells = list(enF) + list(enW)
+        mine_b = sorted((p for p, b in bld.items() if b["owner"] == me), key=lambda p: (-value(bld[p]), geo.nkey(p)))
+        used, hubs = set(), []
+        for p in mine_b:
+            if p in used:
+                continue
+            others = [q for q in mine_b if q != p and q not in used and geo.dist[p][q] <= 2 * P["hub_span"]]
+            if not others:
+                continue
+            q = min(others, key=lambda q: (geo.dist[p][q], geo.nkey(q)))
+            if not any(min(geo.dist[e][p], geo.dist[e][q]) <= P["hub_alert"] for e in en_cells):
+                continue
+            used.update((p, q))
+            cells = [c for c in range(geo.n) if geo.passable[c] and c not in bld]
+            h = min(cells, key=lambda c: (max(geo.dist[c][p], geo.dist[c][q]), geo.dist[c][base_me], geo.nkey(c)))
+            hubs.append((value(bld[p]) + value(bld[q]), h))
+        if hubs:
+            total = int(sum(c for c in w_pool.values() if c > 0) * P["hub_frac"])
+            tv = sum(v for v, _ in hubs)
+            for v, h in hubs:
+                share = int(total * v / tv)
+                if share > 0 and any(c > 0 for c in w_pool.values()):
+                    send_w(h, share, -1)
     siege.sort(key=lambda t: (-t[0], geo.nkey(t[1])))
     wmode["siege"] = True
+    # 미끼(사용자 제안): 규칙 봇은 위협받는 건물에 '위협 + 1' 명을 보내 지킨다. 본대 공성 목표 T 에서 멀리 떨어진 적 건물 D 옆 칸에
+    # feint_n 명을 세워 위협만 만들고(들어가지 않는다) 적 수비를 D 로 끌어내 T 를 얇게 만든다. D 는 유효한 동안 유지한다.
+    if P["feint_n"] and siege and any(c > 0 for c in w_pool.values()):
+        T = siege[0][1]
+        dec = [i for i, b in bld.items() if b["owner"] == opp and i != T and geo.dist[i][T] >= P["feint_sep"]]
+        if dec:
+            def near_w(i):
+                return min((geo.dist[w][i] for w, c in w_pool.items() if c > 0), default=INF)
+            prev = getattr(mem, "feint", None)
+            D = prev if prev in dec else min(dec, key=lambda i: (near_w(i), geo.nkey(i)))
+            mem.feint = D
+            spots = [v for _, v in geo.nbrs[D] if v not in bld]
+            if spots and near_w(D) < INF:
+                spot = min(spots, key=lambda v: (near_w(v), geo.nkey(v)))
+                send_w(spot, P["feint_n"], -1)
+        else:
+            mem.feint = None
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):
             break

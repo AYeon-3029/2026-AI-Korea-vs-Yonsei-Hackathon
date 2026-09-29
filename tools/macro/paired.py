@@ -49,7 +49,7 @@ def main():
     p.add_argument("--a", default="{}")
     p.add_argument("--b", required=True)
     p.add_argument("--seeds", required=True)
-    p.add_argument("--opps", default=",".join(POOL + ["v12", "srv13_press", "srv13_eco"] + XOPPS))
+    p.add_argument("--opps", default=",".join(["v14"] + POOL + ["v12", "srv13_press", "srv13_eco"] + XOPPS))
     p.add_argument("--workers", type=int, default=24)
     a = p.parse_args()
     pa, pb = json.loads(a.a), json.loads(a.b)

@@ -33,6 +33,7 @@
     공학관 12.6, 적 건물 배율 1.77, 위험 배율 0.23. v12 상대 0.602(1200경기), 모방 풀 두 곳 모두 두 번 연속 우위.
 """
 import json
+import math
 import os
 import sys
 import traceback
@@ -219,6 +220,44 @@ P = {
 if os.environ.get("BOT_PARAMS"):
     P.update(json.loads(os.environ["BOT_PARAMS"]))
 
+# ------------------------------------------------------------------ 스위치 판단 신경망(게이트)
+# 매 턴 판세 특징 GATE_IN 개 → tanh 은닉 GATE_H 개 → 스위치 GATE_OUT 개. 출력 > 0 이면 그 턴 스위치를 켠다.
+# 가중치는 ES(tools/train_nn.py --head g)로 대전 승점률만 보고 학습해 아래 GATE_W 에 상수로 넣는다(대회 공지: 소스 안 상수 허용).
+# GATE_W 가 비어 있으면 게이트를 쓰지 않는다(= 스위치 기본값 그대로). 로컬 학습은 환경변수 NN_GATE 로 덮어쓴다.
+GATE_IN, GATE_H, GATE_OUT = 10, 6, 5
+GATE_N = GATE_IN * GATE_H + GATE_H + GATE_H * GATE_OUT + GATE_OUT     # 101
+GATE_BIAS0 = -1.0                  # 학습 시작점: 은닉·출력 가중치 0, 출력 편향 −1 → 모든 스위치 꺼짐(= 게이트 없는 봇)
+GATE_W = []
+if os.environ.get("NN_GATE"):
+    GATE_W = json.loads(os.environ["NN_GATE"])
+
+
+def gate_forward(x):
+    """x: 특징 GATE_IN 개 → 출력 GATE_OUT 개(선형). 학습 파라미터 θ 는 시작점에서의 차이로 둔다(θ = 0 → 모두 꺼짐)."""
+    w = GATE_W
+    k = 0
+    h = []
+    for _ in range(GATE_H):
+        s = sum(w[k + i] * x[i] for i in range(GATE_IN)) + w[k + GATE_IN]
+        k += GATE_IN + 1
+        h.append(math.tanh(s))
+    out = []
+    for _ in range(GATE_OUT):
+        s = sum(w[k + i] * h[i] for i in range(GATE_H)) + w[k + GATE_H] + GATE_BIAS0
+        k += GATE_H + 1
+        out.append(s)
+    return out
+
+
+# 게이트 출력 순서별 스위치: 켜짐일 때·꺼짐일 때 P 값
+GATE_SWITCHES = [
+    ("역전 모드", {"cb_turn": 0, "cb_margin": -99}, {"cb_turn": 999}),
+    ("새로 점령한 건물 수성", {"hold_new": 10}, {"hold_new": 0}),
+    ("F 몰아치기", {"eg_f_turn": 0, "eg_max_f": 8, "eg_min_f": 6}, {"eg_f_turn": 999}),
+    ("가망 없는 수비 포기", {"def_hopeless": 6, "hopeless_gate": "always"}, {"def_hopeless": 0}),
+    ("방어 경로", {"cov_route": True, "cov_neutral": 1.0}, {"cov_route": False}),
+]
+
 
 # ------------------------------------------------------------------ 지형 전처리
 
@@ -283,6 +322,7 @@ class Memory:
         self.last_goals = {}      # 지난 턴 W 를 보낸 공격 목표 → 보낸 인원
         self.prev_owner = {}      # 건물 id → 지난 턴 소유
         self.cap_turn = {}        # 건물 id → 내가 마지막으로 점령한 턴
+        self.last_change = 0      # 마지막으로 건물 소유가 바뀐 턴(교착 판단용)
         pos = {(b["x"], b["y"]): b["id"] for b in init.buildings}
         self.mirror = {b["id"]: pos.get((geo.w - 1 - b["x"], geo.h - 1 - b["y"]), b["id"])
                        for b in init.buildings}
@@ -357,6 +397,8 @@ def decide(view, init):
             mem.depot_got.add(b["id"])
         if b["owner"] == me and mem.prev_owner.get(b["id"], me) != me:
             mem.cap_turn[b["id"]] = view.turn
+        if b["id"] in mem.prev_owner and mem.prev_owner[b["id"]] != b["owner"]:
+            mem.last_change = view.turn
         mem.prev_owner[b["id"]] = b["owner"]
 
     bld = {geo.idx(b["x"], b["y"]): b for b in view.buildings}
@@ -552,6 +594,17 @@ def decide(view, init):
                and my_pts - opp_pts >= P["lead_margin"])
     n_myF, n_myW = sum(myF.values()), sum(myW.values())
     n_enW = sum(enW.values())
+    if GATE_W:
+        # 스위치 판단 신경망: 이번 턴 판세 → 스위치별 켬/끔(P 를 턴마다 덮어쓴다)
+        dm, do = geo.dist[base_me], geo.dist[base_opp]
+        fwd = sum(c for i, c in enW.items() if dm[i] < do[i]) / max(1, n_enW)
+        n_mb = sum(1 for b in bld.values() if b["owner"] == me)
+        n_ob = len(opp_blds)
+        x = [view.turn / TOTAL_TURNS, (my_pts - opp_pts) / 10.0, (n_myW - n_enW) / 50.0, (n_mb - n_ob) / 8.0,
+             n_myF / 8.0, sum(enF.values()) / 8.0, (view.my_resource - view.opp_resource) / 40.0, fwd,
+             min(1.0, (view.turn - mem.last_change) / 30.0), my_pts / max(1.0, total_pts)]
+        for (_, on, off), o in zip(GATE_SWITCHES, gate_forward(x)):
+            P.update(on if o > 0 else off)
     n_goals = len(targets_all)
     eg_f = view.turn >= P["eg_f_turn"]
     if endgame or eg_f:

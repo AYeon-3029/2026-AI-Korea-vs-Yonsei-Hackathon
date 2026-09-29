@@ -22,9 +22,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 from arena import play  # noqa: E402
 from pool_eval import opp_cmd  # noqa: E402
 
-HEADS = {"w": ("NN_W", 105, "weights.json"), "p": ("NN_P", 134, "policy.json")}
+HEADS = {"w": ("NN_W", 105, "weights.json"), "p": ("NN_P", 134, "policy.json"),
+         # g: 제출 봇(Model/main.py)의 스위치 판단 신경망 GATE_W(101). 학습 시작 때 봇을 out/nn/<이름>/bot 으로 복사해 고정한다.
+         "g": ("NN_GATE", 101, "gate.json")}
 HEAD = "w"
 BOT = f"{ROOT}/Model/sparring/nnbot/main.py"
+BOT_FILES = ["main.py", "protocol.py", "campus_bot.py", "_generated.py", "tactical.py"]
 
 
 def cmd(w):
@@ -88,12 +91,20 @@ def main():
     p.add_argument("--replay-beta", type=float, default=0.6)
     p.add_argument("--head", default="w", choices=sorted(HEADS), help="w = 목표 점수 보정(105), p = 판세별 파라미터 정책(134)")
     args = p.parse_args()
-    global HEAD
+    global HEAD, BOT
     HEAD = args.head
     N = HEADS[HEAD][1]
 
     out = ROOT / "out/nn" / args.name
     out.mkdir(parents=True, exist_ok=True)
+    if HEAD == "g":
+        import shutil
+        bot_dir = out / "bot"
+        if not bot_dir.exists():
+            bot_dir.mkdir()
+            for f in BOT_FILES:
+                shutil.copy(ROOT / "Model" / f, bot_dir / f)
+        BOT = f"{bot_dir}/main.py"
     rng = random.Random(args.rng)
     theta = [0.0] * N
     opps = args.opps.split(",")

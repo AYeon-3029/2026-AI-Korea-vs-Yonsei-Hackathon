@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v18.
+"""깃발 대항전 전략 봇 v19.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -46,6 +46,7 @@
 20. v18: v17 + 이동 중 F 엄호(fesc_n 1, 상위 팀 관찰: 우리 F 사망 9.4 vs 상위 3.8 — 목표로 가는 F 의 다음 칸이 적 W 에 노출되면
     W 를 먼저 보내 같은 턴 도착) + 경제 공격대 home 모드(수 동률이어도 우리 진영 학생회관·공학관을 적이 가지면 발동).
     v17 대비 새 시드 91000·92000번대 현실 풀 +0.027±0.006·+0.044±0.006(7200쌍씩), 공세형 +0.036±0.010·+0.021±0.009(3600쌍씩).
+21. v19: v18 + F 위험 탈출(F 사망 진단 tools/macro/fdeath.py: 사망 93% 가 이미 위험한 칸에 갇힌 F) — 목표 위 F 가 위험하면 안전한 옆 칸으로(f_goal_flee 1), 사방 위험이면 (위협−엄호) 최소 칸(f_trap_min). v18 대비 새 시드 101000번대 현실 풀 +0.071±0.007(4800쌍), 공세형 +0.089±0.010(2400쌍), 실제 상태 +0.046±0.010(1328쌍).
 """
 import json
 import math
@@ -290,6 +291,9 @@ P = {
     "fesc_n": 1,  # v18: 0 → 1
     "fesc_R": 2,
     "fesc_worth": 3.0,
+    # dev18(F 사망 진단 tools/macro/fdeath.py: 사망의 93% 가 이미 위험한 칸에 갇힌 F, 37% 가 목표 건물 위에서 안전한 옆 칸을 두고 버티다 죽음)
+    "f_goal_flee": 1,              # 목표 위 F 가 위험하면 안전한 옆 칸으로 비킨다. 1 = 전체 위협(생산 가능분 포함), 2 = 실제 적 W 만 v19: 0 → 1
+    "f_trap_min": True,           # 사방이 위험하면 목표 쪽 전진 대신 (위협 − 엄호)가 가장 작은 칸(제자리 포함) v19: False → True
     # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
     # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
     "strike_w": 2,  # v17: 0 → 2
@@ -469,6 +473,7 @@ DBG = []   # 진단용(tools/macro/rerun.py --dump): W 작업 배정 기록. 대
 # 진단 계측(PLAN-frontier 단계 0): BOT_STATS=<폴더> 이면 매 턴 누적 지표를 <폴더>/<pid>.json 에 덮어쓴다.
 # 제출 환경에서는 설정되지 않으므로 아무 일도 하지 않는다.
 STATS_DIR = os.environ.get("BOT_STATS", "")
+FDBG = None                # 진단용: list 를 넣으면 F 판단 사유 (턴, 출발, 도착, 사유, 출발 안전, 도착 안전)
 STATS = {"f_lost": 0, "gained": 0, "lost": 0, "exp_f": 0, "owned": set(), "pts140": None}
 
 
@@ -1687,6 +1692,12 @@ def decide(view, init):
         return P["region_bonus"] if t_me[t] < t_opp[t] else 1.0
 
     final_F = {i: 1 for i in holding}
+
+    def fdbg(u, dest, why):
+        if FDBG is not None:
+            FDBG.append((view.turn, geo.xy(u), geo.xy(dest), why, safe(u), safe(dest), any(safe(v) for _, v in geo.nbrs[u])))
+    for i in holding:
+        fdbg(i, i, 'hold')
     race_eta = {}
     if P["la_race"]:
         # 적 F 도착 턴: 현재 적 F + (생산 가능하면) 적 생산 거점에서 새로 나오는 F
@@ -1802,6 +1813,25 @@ def decide(view, init):
         _, k, t = best
         u = free_units.pop(k)
         del targets[t]
+        if not wait and not safe(u):
+            if P["f_goal_flee"] and u == t and (P["f_goal_flee"] == 1 or 0 < threat_w[u] >= cover[u]):
+                side = [(d, v) for d, v in geo.nbrs[u] if safe(v)]
+                if pref_of("F") is not None:
+                    side.sort(key=lambda dv: prefer_f(dv[1]))
+                if side:
+                    add_move(u, "F", 1, side[0][0])
+                    fdbg(u, side[0][1], 'flee')
+                    final_F[side[0][1]] = final_F.get(side[0][1], 0) + 1
+                    continue
+            if P["f_trap_min"] and u != t and not any(safe(v) for _, v in geo.nbrs[u]):
+                cand = [(threat[u] - cover[u], 1, geo.dist[u][t], geo.nkey(u), None, u)]
+                cand += [(threat[v] - cover[v], 0, geo.dist[v][t], geo.nkey(v), d, v) for d, v in geo.nbrs[u]]
+                _, _, _, _, d, v = min(cand)
+                if d is not None:
+                    add_move(u, "F", 1, d)
+                fdbg(u, v, 'trap')
+                final_F[v] = final_F.get(v, 0) + 1
+                continue
         for dest, n in ([(u, 1)] if wait else advance(u, "F", 1, t, safe)):
             if dest != t:
                 f_plan[dest] = t
@@ -1813,6 +1843,7 @@ def decide(view, init):
                     if side and side[0][0] < near_en:
                         add_move(u, "F", 1, side[0][2])
                         dest = side[0][3]
+            fdbg(u, dest, 'wait' if wait else ('tele' if geo.dist[u][dest] > 1 else 'adv'))
             final_F[dest] = final_F.get(dest, 0) + n
 
     # 목표가 없는 깃발병: 위협받으면 피하고 아니면 대기
@@ -1823,6 +1854,7 @@ def decide(view, init):
                           if safe(v) and v not in bld)
             if side:
                 add_move(u, "F", 1, side[0][1])
+                fdbg(u, next(v for d, v in geo.nbrs[u] if d == side[0][1]), 'idle_off')
                 continue
         if not safe(u):
             side = [(d, v) for d, v in geo.nbrs[u] if safe(v)]
@@ -1830,7 +1862,9 @@ def decide(view, init):
                 side.sort(key=lambda dv: prefer_f(dv[1]))
             if side:
                 add_move(u, "F", 1, side[0][0])
+                fdbg(u, side[0][1], 'idle_flee')
                 continue
+        fdbg(u, u, 'idle_stay')
         final_F[u] = final_F.get(u, 0) + 1
 
     # 정찰병 이동: 가까운 미공개 건물로 두 칸씩(MOVE2). 도착 칸에서만 전투가 나므로 도착 칸만 안전하면 된다.

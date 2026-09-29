@@ -244,7 +244,10 @@ P = {
     "eng_last_w": 0.0,             # 그 차단 작업 가치 가산
     "eng_last_need": 0,            # 그 차단 인원 여유
     "eng_deny_w": 0.0,             # 상대 공학관이 하나뿐이면 그 공학관 F 목표·공성 가치 × (1 + eng_deny_w)
-    "plaza_bonus": 0.0,           # 광장 가치 가산(점수 3 고정·점령 비용 4). 0 = v14
+    "garrison_n": 0,               # 우리 건물 칸 최소 주둔 인원. 0 = 끔
+    "garrison_types": "eco",       # eco = 학생회관·공학관만 | all = 모든 건물
+    "garrison_w": 0.0,             # 주둔 작업 가치 가산(작업 가치 = garrison_w + 건물 가치)
+    "plaza_bonus": 0.0,          # 광장 가치 가산(점수 3 고정·점령 비용 4). 0 = v14
     "siege_spread": 1,            # 남는 W 를 상위 몇 개 공성 목표(가장 가까운 곳)로 나눌지. 1 = v14(최우선 목표 하나)
     "early_eco_w": 0.0,            # early_eco_turn 까지 학생회관·공학관 F 목표 가치 × (1 + early_eco_w). 0 = 끔
     "early_eco_turn": 40,
@@ -1221,6 +1224,12 @@ def decide(view, init):
         for i, b in bld.items():
             if b["type"] == "PLAZA" and b["owner"] == me and threat[i] > 0:
                 jobs.append((100.0, i, threat[i] + P["plaza_hold"], INF, -1))
+    if P["garrison_n"]:
+        # 후방 최소 주둔(팀원 관찰: 상대는 격전지가 아닌 자기 건물에 W 1명을 둬 우리 F 의 단독 진입을 막는다 / 야르렁전 88턴 우리 학생회관을
+        # 적 F 혼자 점령). 우리 건물 칸에 garrison_n 명을 둔다. types: eco = 학생회관·공학관, all = 모든 건물.
+        for i, b in bld.items():
+            if b["owner"] == me and (P["garrison_types"] == "all" or b["type"] in ("HALL", "ENG")):
+                jobs.append((P["garrison_w"] + value(b), i, P["garrison_n"], INF, -1))
     jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
     done_goals = set()

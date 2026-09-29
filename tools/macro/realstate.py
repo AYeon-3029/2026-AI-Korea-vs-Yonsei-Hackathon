@@ -106,17 +106,38 @@ def play_from(state, me, my_agent, opp_agent):
     return g
 
 
+def play_track(state, me, my_agent, opp_agent, horizon=30):
+    """play_from 과 같되 분기 후 horizon 턴 동안 우리 공학관·학생회관 보유 턴 수(건물 수 합)를 센다."""
+    g = Game.__new__(Game)
+    g.seed = -1
+    g.state = state.clone()
+    g.agents = {me: my_agent, ("Y" if me == "K" else "K"): opp_agent}
+    for team, a in g.agents.items():
+        a.start(serialize_init(g.state, team))
+    g.result = None
+    eco = {"ENG": 0, "HALL": 0}
+    t0 = g.state.turn
+    while g.result is None:
+        g.step()
+        if g.state.turn - t0 <= horizon:
+            for b in g.state.buildings.values():
+                if b.owner == me and b.btype in eco:
+                    eco[b.btype] += 1
+    return g, eco
+
+
 def job(args):
-    path, t, proxy, ver, pa, pb = args
+    path, t, proxy, vers, pa, pb = args
     rs = restore(path, t)
     if rs is None:
         return None
     s, me, _ = rs
-    out = []
-    for params in (pa, pb):
-        g = play_from(s, me, Agent(ver, params), Agent(*OPPS[proxy]))
+    out, ecos = [], []
+    for ver, params in zip(vers, (pa, pb)):
+        g, eco = play_track(s, me, Agent(ver, params), Agent(*OPPS[proxy]))
         out.append(value(g.result, me))
-    return os.path.basename(path), t, proxy, out
+        ecos.append(eco)
+    return os.path.basename(path), t, proxy, out, ecos
 
 
 def main():
@@ -125,14 +146,20 @@ def main():
     p.add_argument("--turns", default="30,50,70,90,110,130")
     p.add_argument("--proxies", default=",".join(PROXIES))
     p.add_argument("--ver", default="dev")
+    p.add_argument("--aver", default="", help="A 쪽 봇 버전(기본 --ver)")
+    p.add_argument("--bver", default="", help="B 쪽 봇 버전(기본 --ver)")
+    p.add_argument("--files", default="", help="파일 이름 조각(쉼표) — 지정하면 그 경기만")
     p.add_argument("--a", default="{}")
-    p.add_argument("--b", required=True)
+    p.add_argument("--b", default="{}")
     p.add_argument("--workers", type=int, default=24)
     a = p.parse_args()
     files = [f for d in a.games.split(",") for f in sorted(glob.glob(os.path.join(d, "*.json")))]
+    if a.files:
+        files = [f for f in files if any(os.path.basename(f) == x for x in a.files.split(","))]
     turns = [int(x) for x in a.turns.split(",")]
     pa, pb = json.loads(a.a), json.loads(a.b)
-    jobs = [(f, t, px, a.ver, pa, pb) for f in files for t in turns for px in a.proxies.split(",")]
+    vers = (a.aver or a.ver, a.bver or a.ver)
+    jobs = [(f, t, px, vers, pa, pb) for f in files for t in turns for px in a.proxies.split(",")]
     t0 = time.time()
     rows = []
     with Pool(a.workers) as pool:
@@ -143,12 +170,15 @@ def main():
     d = V[:, 1] - V[:, 0]
     print(f"{len(rows)}쌍  A {V[:, 0].mean():.3f}  B {V[:, 1].mean():.3f}  차 {d.mean():+.4f} ± {d.std() / np.sqrt(len(d)):.4f}"
           f"  (다름 {np.mean(d != 0):.2f})  {time.time() - t0:.0f}s")
+    E = lambda k, j: np.mean([x[4][j][k] for x in rows])
+    print(f"  분기 후 30턴 우리 공학관 보유 A {E('ENG', 0):.1f} B {E('ENG', 1):.1f} · 학생회관 A {E('HALL', 0):.1f} B {E('HALL', 1):.1f} (건물-턴)")
     by = {}
-    for f, t, px, v in rows:
-        by.setdefault(f, []).append(v)
-    for f in sorted(by):
-        v = np.array(by[f])
-        print(f"  {f:<22} A {v[:, 0].mean():.3f}  B {v[:, 1].mean():.3f}  {np.mean(v[:, 1] - v[:, 0]):+.3f}")
+    for f, t, px, v, _ in rows:
+        by.setdefault((f, t), []).append(v)
+    if len({f for f, _ in by}) <= 3:
+        for key in sorted(by):
+            v = np.array(by[key])
+            print(f"  {key[0]:<18} {key[1]:>3}턴  A {v[:, 0].mean():.3f}  B {v[:, 1].mean():.3f}  {np.mean(v[:, 1] - v[:, 0]):+.3f}")
 
 
 if __name__ == "__main__":

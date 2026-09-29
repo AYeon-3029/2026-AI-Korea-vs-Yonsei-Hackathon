@@ -49,6 +49,14 @@ REAL_OPPS = ["semi14", "semi14_g6", "semi14_press", "semi14_eco", "v10", "v9",
              "v14", "srv14_press", "srv14_eco", "b72", "x_press", "x_eco"]
 if os.environ.get("TUNE_POOL") == "real":
     TUNE_OPPS = REAL_OPPS
+# 8차 보강 풀: 현실 풀 + v14 맞춤 공격자 2종(적대적 탐색 x1 #291·#239 — 수비적 경제형, v14 상대 0.562·0.530).
+# 공격자는 두 번 넣어 비중을 높인다(v14 보강이 목적). 검증은 현실 풀과 공격자를 따로 본다.
+for _n in (291, 239):
+    _p = os.path.join(ROOT, "out/tune/x1", f"t{_n}.json")
+    if os.path.exists(_p):
+        OPPS[f"x{_n}"] = ("dev11", json.load(open(_p)))
+if os.environ.get("TUNE_POOL") == "hard":
+    TUNE_OPPS = REAL_OPPS + ["x291", "x239", "x291", "x239"]
 
 V14 = {"max_f": 5, "min_f": 5, "min_w": 5, "w_margin": 27, "guard_radius": 15, "risk_local_w": 0.4215, "hall_bonus": 8.7462,
        "eng_bonus": 8.1937, "escort_extra": 5, "siege_bld_bonus": 9.7066, "enemy_owned_mult": 1.7663,

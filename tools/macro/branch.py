@@ -95,6 +95,11 @@ OPPS["srv14_press"] = ("v14", SRV12_PRESS)
 OPPS["srv14_eco"] = ("v14", SRV12_ECO)
 REAL_POOL = ["semi14", "semi14_g6", "semi14_press", "semi14_eco", "v10", "v9",
              "v14", "srv14_press", "srv14_eco", "b72", "x_press", "x_eco"]
+# v14 맞춤 공격자(적대적 탐색 tools/macro/exploit.py --study x1): 수비적 경제형
+for _n in (291, 239):
+    _p = os.path.join(os.path.dirname(__file__), "../../out/tune/x1", f"t{_n}.json")
+    if os.path.exists(_p):
+        OPPS[f"x{_n}"] = ("dev11", json.load(open(_p)))
 XOPPS = ["x_rush", "x_turtle", "x_fswarm", "x_eco", "x_center", "x_greedy", "x_egf", "x_press"]
 POOL = ["v13", "srv12_press", "srv12_eco", "srv12_egf", "b72", "v11"]
 

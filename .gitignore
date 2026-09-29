@@ -7,3 +7,5 @@ out/nn/
 out/sub/
 out/macro/*.jsonl
 out/macro/*.log
+# 로컬 대전 리플레이(수백 MB) — 새 리플레이는 로컬에만 둔다(이미 커밋된 파일은 유지)
+out/replays/

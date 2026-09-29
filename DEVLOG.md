@@ -1618,3 +1618,7 @@ f_wait_2step −0.018 / −0.029, block_tele +0.001 / +0.003, raid_w 0.5 −0.00
 **v18 = v17 + fesc_n 1 + eco_strike_mode home** (`Model/history/v18`, `submissions/submission-Junghoon-v18.zip`, `Model/` = v18).
 관문(`out/macro/gate18.sh`): 동치 480/480·예외 0, 거울전 20/20, 공식 하네스 93000-93019(40경기) v17 0.650 · v16 0.750 · v15 0.600,
 경기별 최대 응답 중앙값 95.6ms(상대 94.7ms, 동시 부하 20프로세스), ZIP 통과.
+
+**v18 위 세기 조정** (A = v18, 94000-94199 현실 4800 / 공세 2400쌍): fesc_n 2 −0.025±0.007 / −0.012, fesc_R 3 −0.011 / −0.003, fesc_worth 1 −0.017 / −0.013,
+fesc_worth 6 −0.004 / −0.002, strike_w 1 −0.003 / +0.008, strike_w 3 −0.003 / +0.015, eco_strike_R 2 +0.000 / +0.004, eco_def_w 0.7 +0.004 / +0.008(갈린 경기 2~3%)
+→ 모두 무차·손해, **v18 을 최종 후보로 확정.** v18 평가 리플레이 `out/replays/v18_eval/`(7상대 × 2시드 × 양 진영).

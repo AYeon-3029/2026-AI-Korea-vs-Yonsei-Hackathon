@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v16.
+"""깃발 대항전 전략 봇 v17.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -40,6 +40,9 @@
 18. v16: 9/29 20시 실전 패배(상위 공세형 상대에게 학생회관·공학관을 잃고 탈환이 계속 늦춰짐, 사용자 관찰) → 경제 열세 공격대(eco_strike 3):
     우리 학생회관(공학관) 수가 상대보다 적으면 아군 W 에서 가장 가까운 적 소유 학생회관·공학관(진영 무관)에 '2칸 안 적 W + 3' 명을
     최우선 작업으로 모은다. v15 대비 현실 풀 새 시드 +0.033±0.005(7200쌍), 공세형 대리 풀 +0.030±0.008(3600쌍).
+19. v17: 상위 팀 행동 분석(F 사망 우리 9.4 vs 상위 3.8 등) + Optuna 9차(v16 중심, 현실 풀 12 + 공세형 대리 6) #258.
+    학생회관 14.7·공학관 13.7(경제 중시), 중앙 기댓값 1.58, 거리 보정 8.0, 공성 16.9·집결 4, 진입 차단 2칸, 경제 공격대 5명·반경 3,
+    경제 열세 가중(eco_def 1.42/0.52), 대기 적 무리 타격 2, F 겹침 방지. v16 대비 현실 풀 +0.044±0.007(7200쌍), 공세형 +0.037±0.010(3600쌍).
 """
 import json
 import math
@@ -61,39 +64,39 @@ TELE_MIN_ST = CFG["tele"]["min_stations"]
 
 # 튜닝 파라미터(오프라인 대전으로 조정)
 P = {
-    "center_expect": 2.2431,      # 중앙 건물 미공개 점수 기댓값(2~4) v6: 3.0 → 2.75 v9: 2.75 → 2.35 v12: 2.35 → 2.6779 v13: 2.6779 → 2.2857 v15: 2.2857 → 2.2431
-    "side_expect": 1.2623,        # 신촌·안암 건물 미공개 점수 기댓값(1~2) v6: 1.5 → 1.1 v9: 1.1 → 1.08 v12: 1.08 → 1.2012 v13: 1.2012 → 1.2124 v15: 1.2124 → 1.2623
-    "hall_bonus": 11.241,         # 학생회관 기능 가치(남은 턴 비율을 곱함). v4 2.5 → 탐색 결과 5.0 v6: 5.0 → 7.15 v9: 7.15 → 9.15 v12: 9.15 → 9.23 v13: 9.23 → 9.6127 v14: 9.6127 → 8.7462 v15: 8.7462 → 11.241
-    "depot_bonus": 1.8659,        # 아직 받지 않은 보급소 보너스 가치 v6: 3.0 → 1.76 v9: 1.76 → 1.75 v12: 1.75 → 1.9094 v13: 1.9094 → 2.2573 v15: 2.2573 → 1.8659
-    "hosp_bonus": 4.428,         # 병원 전진 생산 가치(남은 턴 비율을 곱함) v6: 1.0 → 3.19 v9: 3.19 → 3.11 v12: 3.11 → 2.5374 v13: 2.5374 → 3.744 v15: 3.744 → 4.428
-    "eng_bonus": 10.2462,          # 공학관: W 비용 3→2 는 군비 상시 할인. v4 0.5 → 5.0 v6: 5.0 → 9.13 v9: 9.13 → 9.01 v12: 9.01 → 10.5943 v13: 10.5943 → 12.6092 v14: 12.6092 → 8.1937 v15: 8.1937 → 10.2462
-    "lib_bonus": 3.2902,          # 도서관: 점령 비용 −1. v4 0.5 → 2.0 v6: 2.0 → 2.03 v9: 2.03 → 2.41 v12: 2.41 → 2.8522 v13: 2.8522 → 2.9107 v15: 2.9107 → 3.2902
+    "center_expect": 1.577,      # 중앙 건물 미공개 점수 기댓값(2~4) v6: 3.0 → 2.75 v9: 2.75 → 2.35 v12: 2.35 → 2.6779 v13: 2.6779 → 2.2857 v15: 2.2857 → 2.2431 v17: 2.2431 → 1.577
+    "side_expect": 1.309,        # 신촌·안암 건물 미공개 점수 기댓값(1~2) v6: 1.5 → 1.1 v9: 1.1 → 1.08 v12: 1.08 → 1.2012 v13: 1.2012 → 1.2124 v15: 1.2124 → 1.2623 v17: 1.2623 → 1.309
+    "hall_bonus": 14.735,         # 학생회관 기능 가치(남은 턴 비율을 곱함). v4 2.5 → 탐색 결과 5.0 v6: 5.0 → 7.15 v9: 7.15 → 9.15 v12: 9.15 → 9.23 v13: 9.23 → 9.6127 v14: 9.6127 → 8.7462 v15: 8.7462 → 11.241 v17: 11.241 → 14.735
+    "depot_bonus": 1.273,        # 아직 받지 않은 보급소 보너스 가치 v6: 3.0 → 1.76 v9: 1.76 → 1.75 v12: 1.75 → 1.9094 v13: 1.9094 → 2.2573 v15: 2.2573 → 1.8659 v17: 1.8659 → 1.273
+    "hosp_bonus": 3.777,         # 병원 전진 생산 가치(남은 턴 비율을 곱함) v6: 1.0 → 3.19 v9: 3.19 → 3.11 v12: 3.11 → 2.5374 v13: 2.5374 → 3.744 v15: 3.744 → 4.428 v17: 4.428 → 3.777
+    "eng_bonus": 13.746,          # 공학관: W 비용 3→2 는 군비 상시 할인. v4 0.5 → 5.0 v6: 5.0 → 9.13 v9: 9.13 → 9.01 v12: 9.01 → 10.5943 v13: 10.5943 → 12.6092 v14: 12.6092 → 8.1937 v15: 8.1937 → 10.2462 v17: 10.2462 → 13.746
+    "lib_bonus": 3.904,          # 도서관: 점령 비용 −1. v4 0.5 → 2.0 v6: 2.0 → 2.03 v9: 2.03 → 2.41 v12: 2.41 → 2.8522 v13: 2.8522 → 2.9107 v15: 2.9107 → 3.2902 v17: 3.2902 → 3.904
     "watch_bonus": 0.2,
     "station_scale": 0.0,      # 역 가치 = 맵 분석 단축 칸수 합 × scale (실험 결과 0.08은 역효과)
     "station_cap": 4.0,
     "station_solo": 0.5,       # 짝 역이 없을 때 역 가치 반영 비율
     # 적 소유 건물 탈취 보너스(상대가 누리던 효과를 빼앗는 가치)
     "deny": {"ENG": 2.0, "LIBRARY": 1.5, "HALL": 2.0, "HOSPITAL": 1.0},
-    "enemy_owned_mult": 1.5875,   # 적 건물은 빼앗으면 상대 점수도 줄어든다 v6: 1.3 → 1.85 v9: 1.85 → 1.68 v12: 1.68 → 1.3728 v13: 1.3728 → 1.7748 v14: 1.7748 → 1.7663 v15: 1.7663 → 1.5875
-    "enemy_f_penalty": 0.6737,    # 적 깃발병이 서 있는 건물(경합) 감점 v6: 0.3 → 0.49 v9: 0.49 → 0.55 v12: 0.55 → 0.7913 v13: 0.7913 → 0.9432 v15: 0.9432 → 0.6737
-    "dist_offset": 5.7256,        # 가치 / (거리 + offset). v4 2.0 → 5.0 (가까운 목표 편중 완화) v6: 5.0 → 4.36 v9: 4.36 → 4.52 v12: 4.52 → 4.7428 v13: 4.7428 → 4.9975 v15: 4.9975 → 5.7256
+    "enemy_owned_mult": 1.93,   # 적 건물은 빼앗으면 상대 점수도 줄어든다 v6: 1.3 → 1.85 v9: 1.85 → 1.68 v12: 1.68 → 1.3728 v13: 1.3728 → 1.7748 v14: 1.7748 → 1.7663 v15: 1.7663 → 1.5875 v17: 1.5875 → 1.93
+    "enemy_f_penalty": 0.5725,    # 적 깃발병이 서 있는 건물(경합) 감점 v6: 0.3 → 0.49 v9: 0.49 → 0.55 v12: 0.55 → 0.7913 v13: 0.7913 → 0.9432 v15: 0.9432 → 0.6737 v17: 0.6737 → 0.5725
+    "dist_offset": 8.028,        # 가치 / (거리 + offset). v4 2.0 → 5.0 (가까운 목표 편중 완화) v6: 5.0 → 4.36 v9: 4.36 → 4.52 v12: 4.52 → 4.7428 v13: 4.7428 → 4.9975 v15: 4.9975 → 5.7256 v17: 5.7256 → 8.028
     "max_f": 4,               # 동시에 유지할 깃발병 상한. v4 7 → 12 (점령 처리량이 병목) v6: 12 → 6 v12: 6 → 4 v13: 4 → 5 v15: 5 → 4
     "min_f": 5,                # 전투병보다 먼저 확보할 깃발병 수 v6: 3 → 5 v12: 5 → 3 v13: 3 → 5
-    "min_w": 5,                # 3턴 이후 최소 전투병 수 v6: 2 → 5 v9: 5 → 6 v12: 6 → 4 v13: 4 → 6 v14: 6 → 5
-    "w_margin": 20,            # 적 전투병 총수 대비 여유분. v4 1 → 12 v6: 12 → 19 v9: 19 → 26 v12: 26 → 27 v13: 27 → 23 v14: 23 → 27 v15: 27 → 20
+    "min_w": 4,                # 3턴 이후 최소 전투병 수 v6: 2 → 5 v9: 5 → 6 v12: 6 → 4 v13: 4 → 6 v14: 6 → 5 v17: 5 → 4
+    "w_margin": 21,            # 적 전투병 총수 대비 여유분. v4 1 → 12 v6: 12 → 19 v9: 19 → 26 v12: 26 → 27 v13: 27 → 23 v14: 23 → 27 v15: 27 → 20 v17: 20 → 21
     "escort_radius": 2,        # 적 F 호위 전투병으로 볼 거리
     "predict_top": 2,          # 적 F 목표 후보 수(가까운 순)
     "late_penalty": 0.5,       # 제때 도착 못 하는 요격 가치 배율
-    "guard_radius": 14,         # 적 유닛이 이 거리 안에 있는 아군 건물만 경계. v4 4 → 9 v6: 9 → 14 v12: 14 → 15 v13: 15 → 19 v14: 19 → 15 v15: 15 → 14
-    "siege_bld_bonus": 11.5744,    # 공성 우선순위: 적 소유 건물 v6: 5.0 → 9.75 v9: 9.75 → 7.62 v12: 7.62 → 6.9113 v13: 6.9113 → 7.6216 v14: 7.6216 → 9.7066 v15: 9.7066 → 11.5744
-    "siege_ring_value": 1.5388,   # 공성 우선순위: 적 생산 거점 둘레 칸 v6: 2.0 → 4.06 v9: 4.06 → 4.61 v12: 4.61 → 3.1722 v13: 3.1722 → 3.1323 v15: 3.1323 → 1.5388
+    "guard_radius": 15,         # 적 유닛이 이 거리 안에 있는 아군 건물만 경계. v4 4 → 9 v6: 9 → 14 v12: 14 → 15 v13: 15 → 19 v14: 19 → 15 v15: 15 → 14 v17: 14 → 15
+    "siege_bld_bonus": 16.945,    # 공성 우선순위: 적 소유 건물 v6: 5.0 → 9.75 v9: 9.75 → 7.62 v12: 7.62 → 6.9113 v13: 6.9113 → 7.6216 v14: 7.6216 → 9.7066 v15: 9.7066 → 11.5744 v17: 11.5744 → 16.945
+    "siege_ring_value": 1.644,   # 공성 우선순위: 적 생산 거점 둘레 칸 v6: 2.0 → 4.06 v9: 4.06 → 4.61 v12: 4.61 → 3.1722 v13: 3.1722 → 3.1323 v15: 3.1323 → 1.5388 v17: 1.5388 → 1.644
     "tele_min_gain": 2,        # TELE 가 일반 이동보다 이만큼 이상 가까워야 사용 v13: 2 → 3 v15: 3 → 2
     "use_tele": True,          # 역 경유 경로 탐색 + TELE (v4: 경로 탐색 수정 후 사용)
     "predict": False,          # 실험 스위치: 적 F 목표 예측 요격(False 면 v2 방식, 예측은 역효과)
     "pred_need_threat": False, # 예측 요격 인원에 목표 칸 위협도 반영
     "pred_deadline": True,     # 예측 요격에서 제때 도착 가능한 인원 우선
     "pred_chase": True,        # 예측 요격과 별도로 현재 위치 추격 작업 추가
-    "chase_mult": 0.9053,         # 추격 작업 가치 = 가장 가까운 목표 가치 × chase_mult v6: 0.8 → 1.33 v9: 1.33 → 1.4 v12: 1.4 → 1.5098 v13: 1.5098 → 1.3194 v15: 1.3194 → 0.9053
+    "chase_mult": 0.9358,         # 추격 작업 가치 = 가장 가까운 목표 가치 × chase_mult v6: 0.8 → 1.33 v9: 1.33 → 1.4 v12: 1.4 → 1.5098 v13: 1.5098 → 1.3194 v15: 1.3194 → 0.9053 v17: 0.9053 → 0.9358
     "pred_mult": 1.0,          # 예측(선점) 작업 가치 배율
     # --- v5 스위치 (all / False / 1.0 이면 v4 동작) ---
     "spawn_threat_mode": "all",    # 적 생산 가능 W 를 위협에 넣는 방식 all|split|half|off (실측 무차)
@@ -108,7 +111,7 @@ P = {
     "siege": True,                 # 남는 W 로 적 건물·생산 거점을 공격 (False 면 순수 수비)
     "f_center_pull": True,         # F 동거리 후보에서 중앙에 가까운 칸을 선호
     # --- v6 스위치 ---
-    "endgame_turn": 152,           # 이 턴부터 후반 모드(가치 = 순수 점수, 기한 안 도달 목표만). 999 = 끔 v6: 150 → 151 v12: 151 → 154 v13: 154 → 148 v15: 148 → 152
+    "endgame_turn": 151,           # 이 턴부터 후반 모드(가치 = 순수 점수, 기한 안 도달 목표만). 999 = 끔 v6: 150 → 151 v12: 151 → 154 v13: 154 → 148 v15: 148 → 152 v17: 152 → 151
     "eg_garrison": False,          # 후반 모드에서 적 본진 포위를 멈추고 내 건물 주둔으로 전환
     # 막판 F 증원(실제 경기 V10 패배: 152턴 광장 상실 후 F 3명으로 8턴간 탈환 실패, 상대는 F 3 → 9)
     "eg_f_turn": 999,              # 이 턴부터 F 상한·최소를 아래 값으로(목표는 160턴 안에 닿는 건물만 센다). 999 = 끔
@@ -116,8 +119,8 @@ P = {
     "eg_min_f": 8,
     # 진입 차단(실제 경기 상실 112건 분석: 전부 적 F 가 전 턴 1칸 옆 → 그 턴 건물 칸 위 아군 W 0).
     # 적 F 가 k(≤ f_block) 턴 안에 들어올 수 있는 내 건물에, k 턴 안에 도착하는 W 로 (k 턴 안에 닿는 적 W + 1) 명을 올린다.
-    "f_block": 1,                  # 0 = 끔, 1 = 1칸 옆 적 F 만, 2 = 2칸까지. v11: 0 → 2 v14: 2 → 1
-    "block_worth": 1.9287,            # 작업 가치 = block_worth + 건물 가치. 10 은 다른 작업을 과하게 밀어낸다. v11: 3.0 v12: 3.0 → 6.2793 v13: 6.2793 → 3.5189 v14: 3.5189 → 2.868 v15: 2.868 → 1.9287
+    "f_block": 2,                  # 0 = 끔, 1 = 1칸 옆 적 F 만, 2 = 2칸까지. v11: 0 → 2 v14: 2 → 1 v17: 1 → 2
+    "block_worth": 2.761,            # 작업 가치 = block_worth + 건물 가치. 10 은 다른 작업을 과하게 밀어낸다. v11: 3.0 v12: 3.0 → 6.2793 v13: 6.2793 → 3.5189 v14: 3.5189 → 2.868 v15: 2.868 → 1.9287 v17: 1.9287 → 2.761
     "block_spawn": False,          # 적 생산 거점이 k 칸 안이면 적이 이번 턴 뽑을 수 있는 W 도 센다(생산이 이동보다 먼저)
     "block_tele": False,           # 적 역이 k−1 칸 안이면 다른 적 역의 W(TELE 1회분, 최대 5)도 센다
     "block_extra": 0,              # 필요 인원 여유
@@ -169,15 +172,15 @@ P = {
     "guard_extra": 0,              # 경계 인원 = 1턴 위협 + guard_extra (v6 까지 0 = 동수, 동수면 적 F 가 살아남는다)
     "escort_wait": True,           # 진입 대기 F 의 목표 건물(위협 있음)에 W 를 먼저 보낸다. v7: False → True
     "escort_dist": 3,              #   F 에서 이 거리 안의 미점령 건물. v7: 1 → 2 v13: 2 → 3
-    "escort_bonus": 1.4596,           #   작업 가치 = 건물 가치 + bonus. v8: 3.0 → 1.5 v9: 1.5 → 1.8 v12: 1.8 → 1.8612 v13: 1.8612 → 1.0011 v15: 1.0011 → 1.4596
-    "escort_extra": 6,             #   보낼 인원 = 위협 + extra. v8: 1 → 2 v12: 2 → 4 v14: 4 → 5 v15: 5 → 6
+    "escort_bonus": 1.09,           #   작업 가치 = 건물 가치 + bonus. v8: 3.0 → 1.5 v9: 1.5 → 1.8 v12: 1.8 → 1.8612 v13: 1.8612 → 1.0011 v15: 1.0011 → 1.4596 v17: 1.4596 → 1.09
+    "escort_extra": 5,             #   보낼 인원 = 위협 + extra. v8: 1 → 2 v12: 2 → 4 v14: 4 → 5 v15: 5 → 6 v17: 6 → 5
     "f_idle_off": True,           # 목표 없는 F 는 내 건물 위에 머물지 않고 옆 빈 칸으로 비킨다 v9: False → True
     "w_spawn": "enf",              # W 생산 거점 기준: enf(적 F 에 가까운 곳) | myf(아군 F 근처, 엄호용) | mix
     "max_f_early": 5,              # early_turn 까지의 깃발병 상한(중립 건물이 많은 초반 확장 경쟁용) v15: 6 → 5
     "early_turn": 30,               # 0 = 끔 v15: 0 → 30
     # --- v9 이후 스위치 (사용자 리플레이 관찰) ---
     "risk_depth_w": 0.0,           # 목표가 적 진영 깊이(내 거점까지 − 적 거점까지 거리) 1칸마다 가치를 이 비율로 깎음. 0 = 끔
-    "risk_local_w": 0.4754,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15 v12: 0.15 → 0.1056 v13: 0.1056 → 0.2271 v14: 0.2271 → 0.4215 v15: 0.4215 → 0.4754
+    "risk_local_w": 0.4586,          # 목표 주변(risk_R 칸) 적 W 가 아군 W 보다 많은 만큼 가치를 깎음. 0 = 끔. v10: 0 → 0.15 v12: 0.15 → 0.1056 v13: 0.1056 → 0.2271 v14: 0.2271 → 0.4215 v15: 0.4215 → 0.4754 v17: 0.4754 → 0.4586
     "risk_R": 3,
     "risk_tele": False,            # 목표 R 칸 안에 적 역이 있으면 다른 적 역의 W(최대 5, TELE 1회분)를 주변 적 병력에 더한다
     # 적 반응 학습(사용자 제안): 우리 공격 목표 주변에 적 W 가 얼마나 몰려드는지 누적해 위험 가중치를 경기 중에 조정
@@ -217,7 +220,7 @@ P = {
     "front_k": 3,                  # 전선 건물 수(내 건물 중 적 생산 거점 쪽으로 가장 깊은 순)
     "rear_R": 4,                   # 뒤쪽 건물 이 거리 안에 적 W 가 들어오면 그 수 + 1 을 그 거리 안에 도착할 병력으로 보낸다
     "fm_siege": False,             # 전선 집결 중에도 적 건물 공성(주변 위험 배율 적용, 본진 포위 제외)을 할지
-    "siege_stage": 2,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입 v13: 2 → 3 v15: 3 → 2
+    "siege_stage": 4,              # 공성 인원이 모자라면 목표 이 칸 안에서 대기(집결). -1 = 대기 없이 투입 v13: 2 → 3 v15: 3 → 2 v17: 2 → 4
     "reinforce_hot": False,        # 격전지(아군·적 W 가 2칸 안에서 맞선 칸)에 공성보다 먼저 증원
     "hot_radius": 2,
     "rapid_garrison": 2,           # rapid: 건물당 최소 주둔
@@ -231,16 +234,16 @@ P = {
     # 역 경유 경로에 '역 위 대기 인원 ÷ 5' 턴을 더하고, 역에서 기다릴지도 실제 대기열로 판단한다. False = v13
     "tele_queue": True,  # v14: False → True
     # 실제 v12 패배 4/5 = 우리 진영 학생회관(공학관) 상실 후 방치(replay.json 94턴·(7) 136턴). 모두 0 이면 v13 과 같다.
-    "retake_w": 0.7693,               # 적이 가진 '우리 쪽' 학생회관·공학관의 F 목표·공성 가치 배율 (1 + retake_w) v14: 0.0 → 0.3904 v15: 0.3904 → 0.7693
-    "retake_risk": 0.3816,            # 그 건물의 목표 위험 감점을 이 비율만큼 덜어낸다(1 = 위험 무시) v14: 0.0 → 0.0979 v15: 0.0979 → 0.3816
+    "retake_w": 1.071,               # 적이 가진 '우리 쪽' 학생회관·공학관의 F 목표·공성 가치 배율 (1 + retake_w) v14: 0.0 → 0.3904 v15: 0.3904 → 0.7693 v17: 0.7693 → 1.071
+    "retake_risk": 0.305,            # 그 건물의 목표 위험 감점을 이 비율만큼 덜어낸다(1 = 위험 무시) v14: 0.0 → 0.0979 v15: 0.0979 → 0.3816 v17: 0.3816 → 0.305
     "eco_block_extra": 2,          # 우리 학생회관·공학관은 진입 차단 반경(f_block)을 이만큼 넓힌다((10): 빈 학생회관을 적 F 혼자 6번 뒤집음) v14: 0 → 3 v15: 3 → 2
-    "eco_block_worth": 4.3944,        # 그 차단 작업 가치 가산 v14: 0.0 → 2.8223 v15: 2.8223 → 4.3944
-    "rush_k": 0.306,                 # rush_turn 까지 적 W − 아군 W 격차 1명당 최소 F 를 rush_k 명 줄인다((8) 초반 러시: 40턴 W 33 대 78) v14: 0.0 → 0.1173 v15: 0.1173 → 0.306
+    "eco_block_worth": 6.317,        # 그 차단 작업 가치 가산 v14: 0.0 → 2.8223 v15: 2.8223 → 4.3944 v17: 4.3944 → 6.317
+    "rush_k": 0.3173,                 # rush_turn 까지 적 W − 아군 W 격차 1명당 최소 F 를 rush_k 명 줄인다((8) 초반 러시: 40턴 W 33 대 78) v14: 0.0 → 0.1173 v15: 0.1173 → 0.306 v17: 0.306 → 0.3173
     "rush_turn": 40,
     # 경제 기습(사용자 제안): 적 학생회관·공학관이 가까우면 광장 대치보다 먼저 빼앗아 수입·W 단가 우위로 광장을 되찾는다.
     # 깃발 뽑힘 방지(사용자 제안): 우리 건물 위 우리 F 는 적 W 하나에 죽으며 건물이 즉시 중립이 된다.
     # 실측(v14, 480경기): 뽑힘 경기당 0.27 = 이번 턴 진입 0.09 + 머물던 F 0.18(87% 역 — W 가 TELE 를 먼저 써 F 가 역에서 대기).
-    "f_own_R": 3,                  # F 가 목표 아닌 우리 건물 칸을 지날 때, R 칸 안 적 W > 그 칸 엄호면 같은 거리의 다른 칸을 먼저 고른다. 0 = 끔 v15: 0 → 3
+    "f_own_R": 5,                  # F 가 목표 아닌 우리 건물 칸을 지날 때, R 칸 안 적 W > 그 칸 엄호면 같은 거리의 다른 칸을 먼저 고른다. 0 = 끔 v15: 0 → 3 v17: 3 → 5
     "f_own_wait": False,           # 위의 경우 대안이 없으면 한 턴 기다린다(강한 버전)
     "f_no_station_wait": True,    # TELE 가 이미 쓰인 턴에 F 는 역 위에서 기다리지 않고 걷는다 v15: False → True
     # 방어 반응(적 F 요격·위협 건물 경계·진입 차단). False 는 실제 서버 상대 모방용(위협에 2턴 안 반응 12~24%, tools/real_react.py)
@@ -269,25 +272,40 @@ P = {
     # --- dev12: 9/29 20시 실전 패배(신촌을못가·참새튀김기·AIKU) 사용자 관찰 대책. 모두 0/False = v15 ---
     # 경제 열세 탈환(사용자: 학생회관·공학관이 없을 때는 적 진영의 것이든 우리 진영의 것이든 되찾는 것이 먼저):
     # 우리 학생회관(공학관) 수가 상대보다 적으면 적 소유 학생회관(공학관) 전부의 F 목표·공성 가치 × (1 + eco_def_w), 위험 감점 × (1 − eco_def_risk)
-    "eco_def_w": 0.0,
-    "eco_def_risk": 0.0,
+    "eco_def_w": 1.421,  # v17: 0.0 → 1.421
+    "eco_def_risk": 0.5229,  # v17: 0.0 → 0.5229
     # 그때 가장 가까운 적 소유 학생회관·공학관 하나에 공격대 작업(인원 = 2칸 안 적 W + eco_strike, 가치 = 건물 가치 + eco_strike_worth). 0 = 끔
-    "eco_strike": 3,  # v16: 0 → 3
+    "eco_strike": 5,  # v16: 0 → 3 v17: 3 → 5
     "eco_strike_worth": 6.0,
     "eco_strike_stage": 2,         # 공격대가 모자라면 목표 이 칸 밖에서 모인다
-    "eco_strike_R": 2,             # 목표 이 칸 안 적 W 를 필요 인원에 넣는다
+    "eco_strike_R": 3,             # 목표 이 칸 안 적 W 를 필요 인원에 넣는다 v17: 2 → 3
+    "eco_strike_mode": "short",    # short = 종류별 수 열세 | home = 열세 또는 우리 진영 학생회관·공학관을 적이 가짐 | sum = 둘의 합계 열세
+    "eco_strike_stick": False,     # 목표가 유효한 동안(적 소유) 같은 목표를 유지한다
+    "eco_strike_min_turn": 0,      # 이 턴부터만 공격대를 보낸다
+    # 이동 중 F 엄호(상위 팀 관찰: F 사망 경기당 상위 3.8 · 우리 9.4, F 옆 W 동행 0.69 · 0.58): 지난 턴 목표로 가는 F 의 다음 칸 v 가
+    # fesc_R 칸 안 적 W 에 노출되면 v 에 (1턴 위협 + fesc_n) 명을 이번 턴 도착으로 보내 F 가 같은 턴에 들어가게 한다. 0 = 끔
+    "fesc_n": 0,
+    "fesc_R": 2,
+    "fesc_worth": 3.0,
     # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
     # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
-    "strike_w": 0,
+    "strike_w": 2,  # v17: 0 → 2
     "strike_min": 3,
     "strike_worth": 8.0,
     "strike_dl": 1,                # 타격 도착 기한(턴). 2 면 2칸 떨어진 무리에도 한 칸 다가선다(다음 턴 다시 판단)
     # F 겹침 방지(사용자: 30턴부터 F 2명이 한 칸에 겹쳐 다님 — 적 W 하나에 둘 다 잡힌다): 같은 거리 다음 칸 중 이번 턴 다른 F 가 가는 칸을 피한다
-    "f_spread": False,
+    "f_spread": True,  # v17: False → True
     # 우리 쪽 빈 중립 건물 쓸기(사용자: AIKU 시드에서 구석 안암역을 끝까지 안 먹음): 우리 본진이 상대 본진보다 home_margin 이상 가깝고
     # 4칸 안에 적 유닛이 없는 중립 건물의 F 목표 가치 × (1 + home_neutral_w). 0 = 끔
     "home_neutral_w": 0.0,
     "home_margin": 3,
+    "late_neutral_turn": 0,        # 이 턴부터만 위 중립 쓸기를 한다(사용자: 손해여도 최종 판정 점수를 위해 나중에는 먹어야 한다)
+    # 적 병력 나눠 세기(사용자: 참새튀김기전 2칸 옆 적 14명을 공학관·역 차단이 각각 전부 세어 병력을 이중으로 묶음).
+    # 적 W 칸 j 를 위협받는 우리 건물들에 BFS 거리 가중 exp(−λ·d) 로 나눠 센다(가까운 건물이 대부분 가져간다). 0 = 끔(각 건물이 전부 센다)
+    "block_share": 0.0,            # 진입 차단 작업의 필요 인원에 적용하는 λ
+    "guard_share": 0.0,            # 경계조(1턴 위협) 필요 인원에 적용하는 λ
+    "threat_share": 0.0,           # 적 F 요격 작업의 1턴 위협(우리 건물)에 적용하는 λ — 한 무리가 인접한 우리 건물 여럿을 위협할 때
+    "share_floor": 0.0,            # 몫의 하한(비율). 동률로 반씩 나뉠 때 과소 방어를 막는다
     "eg_def_turn": 999,
     "eg_def": {"w_margin": 32, "guard_radius": 25, "siege_bld_bonus": 4.0, "siege_ring_value": 1.5},
 }
@@ -566,13 +584,17 @@ def decide(view, init):
         return bld[b]["type"] in ("HALL", "ENG") and geo.dist[base_me][b] < geo.dist[base_opp][b]
     eco_short = {t for t in ("HALL", "ENG") if len(owned(me, t)) < len(owned(opp, t))} if (
         P["eco_def_w"] or P["eco_def_risk"] or P["eco_strike"]) else set()
+    if P["eco_strike"] and P["eco_strike_mode"] == "sum":
+        n_me = len(owned(me, "HALL")) + len(owned(me, "ENG"))
+        n_op = len(owned(opp, "HALL")) + len(owned(opp, "ENG"))
+        eco_short = {"HALL", "ENG"} if n_me < n_op else set()
 
     def eco_def(b):
         """경제 열세 탈환 대상: 우리가 수에서 밀리는 종류의 적 소유 학생회관·공학관(위치 무관)."""
         return bld[b]["owner"] == opp and bld[b]["type"] in eco_short
 
     def home_neutral(b):
-        if not P["home_neutral_w"] or bld[b]["owner"] != "N":
+        if not P["home_neutral_w"] or bld[b]["owner"] != "N" or view.turn < P["late_neutral_turn"]:
             return False
         if geo.dist[base_me][b] + P["home_margin"] > geo.dist[base_opp][b]:
             return False
@@ -1197,6 +1219,22 @@ def decide(view, init):
         """g 까지 가장 가까운 대기 전투병의 거리."""
         return min((geo.dist[i][g] for i, c in w_pool.items() if c > 0), default=INF)
 
+    # 1턴 위협 나눠 세기: 적 W 칸 i 가 다음 턴 닿는 우리 건물이 둘 이상이면 exp(−λ·d) 비율만 그 건물 위협으로 센다
+    thr_sh = {}
+    if P["threat_share"]:
+        lam = P["threat_share"]
+        for i, c in enW.items():
+            B = [b for b in geo.near(i) if b in bld and bld[b]["owner"] == me]
+            if len(B) < 2:
+                continue
+            ws = {b: math.exp(-lam * geo.dist[i][b]) for b in B}
+            tot = sum(ws.values())
+            for b, w in ws.items():
+                thr_sh[b] = thr_sh.get(b, 0.0) + c * (1.0 - max(w / tot, P["share_floor"]))
+
+    def thr(b):
+        return threat[b] - int(thr_sh.get(b, 0.0)) if thr_sh else threat[b]
+
     # 적 깃발병 요격: 다음 목표 건물을 예측해 적보다 먼저(또는 동시에) 도착한다
     jobs = []  # (가치, 목표 칸, 필요 인원, 도착 기한, 집결 거리)
     for e, c in (enF.items() if P["react"] else ()):
@@ -1206,7 +1244,7 @@ def decide(view, init):
             g = e if (e in bld and bld[e]["owner"] != opp) else (
                 min(cands, key=lambda i: (geo.dist[e][i], geo.nkey(i))) if cands else e)
             worth = 2.0 + (value(bld[g]) if g in bld else 0) + (1.0 if g in bld and bld[g]["owner"] == me else 0)
-            jobs.append((worth, g, threat[g] + 1, INF, -1))
+            jobs.append((worth, g, thr(g) + 1, INF, -1))
             if g != e:
                 jobs.append((worth * 0.8, e, threat[e] + 1, INF, -1))
             continue
@@ -1247,8 +1285,19 @@ def decide(view, init):
                     continue
                 seen.add(b)
                 jobs.append((value(bld[b]) + P["escort_bonus"], b, threat[b] + P["escort_extra"], INF, -1))
+    def shared_count(cands, lam):
+        """cands = {건물 칸: 반경 k}. 반경 안 적 W 를 exp(−λ·BFS 거리) 비율로 나눠 센 건물별 인원(실수)."""
+        out = {b: 0.0 for b in cands}
+        for j, c in enW.items():
+            ws = {b: math.exp(-lam * geo.dist[j][b]) for b, k in cands.items() if geo.dist[j][b] <= k}
+            tot = sum(ws.values())
+            for b, w in ws.items():
+                out[b] += c * max(w / tot, P["share_floor"])
+        return out
+
     if P["f_block"] and P["react"]:
         # 전투는 같은 칸에서만 일어난다. 적 F 가 도착하는 턴에 그 칸 위 아군 W 가 적 W 보다 많아야 건물이 산다.
+        blk = []
         for b, bb in bld.items():
             if bb["owner"] != me or enF.get(b, 0) or hopeless(b):
                 continue
@@ -1258,7 +1307,13 @@ def decide(view, init):
             last_eng = bb["type"] == "ENG" and len(owned(me, "ENG")) == 1
             if k > P["f_block"] + (P["eco_block_extra"] if eco else 0) + (P["eng_last_extra"] if last_eng else 0):
                 continue
-            need = sum(c for j, c in enW.items() if geo.dist[j][b] <= k) + 1 + P["block_extra"]
+            blk.append((b, bb, k, eco, last_eng))
+        shared = shared_count({b: k for b, _, k, _, _ in blk}, P["block_share"]) if P["block_share"] else None
+        for b, bb, k, eco, last_eng in blk:
+            if shared is not None:
+                need = math.ceil(shared[b] - 1e-9) + 1 + P["block_extra"]
+            else:
+                need = sum(c for j, c in enW.items() if geo.dist[j][b] <= k) + 1 + P["block_extra"]
             if P["block_spawn"] and any(geo.dist[s][b] <= k for s in spawn_opp):
                 need += view.opp_resource // w_cost(opp)
             if P["block_tele"] and tele_pool:
@@ -1287,11 +1342,18 @@ def decide(view, init):
         for i, b in bld.items():
             if b["owner"] == me and (P["garrison_types"] == "all" or b["type"] in ("HALL", "ENG")):
                 jobs.append((P["garrison_w"] + value(b), i, P["garrison_n"], INF, -1))
-    if P["eco_strike"] and eco_short and myW:
+    home_lost = P["eco_strike_mode"] == "home" and any(
+        bb["owner"] == opp and home_eco(b) for b, bb in bld.items())
+    if P["eco_strike"] and (eco_short or home_lost) and myW and view.turn >= P["eco_strike_min_turn"]:
         # 경제 열세: 가장 가까운(아군 W 기준) 적 소유 학생회관·공학관 하나에 이길 수 있는 공격대를 모은다(집결 2칸)
-        cands = [b for b in bld if eco_def(b)]
+        cands = [b for b in bld if eco_def(b) or (home_lost and bld[b]["owner"] == opp and home_eco(b))]
         if cands:
-            g = min(cands, key=lambda b: (min(geo.dist[w][b] for w in myW), geo.nkey(b)))
+            prev = getattr(mem, "eco_tgt", None)
+            if P["eco_strike_stick"] and prev in cands:
+                g = prev
+            else:
+                g = min(cands, key=lambda b: (min(geo.dist[w][b] for w in myW), geo.nkey(b)))
+            mem.eco_tgt = g
             en = sum(c for j, c in enW.items() if geo.dist[j][g] <= P["eco_strike_R"])
             jobs.append((value(bld[g]) + P["eco_strike_worth"], g, max(threat[g], en) + P["eco_strike"], INF,
                          P["eco_strike_stage"]))
@@ -1306,6 +1368,18 @@ def decide(view, init):
                 continue
             worth = P["strike_worth"] + max(value(bld[b]) for b in near_b) + (1.0 if enF.get(e, 0) else 0.0)
             jobs.append((worth, e, threat[e] + P["strike_w"], P["strike_dl"], -1))
+    if P["fesc_n"] and P["react"]:
+        for c in myF:
+            t = getattr(mem, "f_plan", {}).get(c)
+            if t is None or c == t or t not in bld or bld[t]["owner"] == me:
+                continue
+            st = step_toward(c, t)
+            if st is None:
+                continue
+            v = st[1]
+            if not any(geo.dist[j][v] <= P["fesc_R"] for j in enW):
+                continue
+            jobs.append((value(bld[t]) + P["fesc_worth"], v, threat[v] + P["fesc_n"], 1, -1))
     jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
     done_goals = set()
@@ -1382,13 +1456,16 @@ def decide(view, init):
         guard_posts = [(-value(b), geo.nkey(p), p) for p, b in bld.items()
                        if b["owner"] == me and p not in done_goals and opp_f_reach(p, H)]
     fm = view.turn >= P["front_mass_turn"] and not (hold or rapid)
+    g_sh = shared_count({p: 1 for _, _, p in guard_posts}, P["guard_share"]) if P["guard_share"] and guard_posts else None
     wmode["tag"] = "guard"
     for _, _, p in ([] if hold or rapid or fm or not P["react"] else sorted(guard_posts)):
         if not any(c > 0 for c in w_pool.values()):
             break
         # 같은 수면 1:1 상쇄로 모두 사라지고 적 F 가 살아남아 중립화한다 → 이기려면 적 + 1 이 필요하다
+        # (나눠 세기: 1턴 위협 중 적 W 몫만 나누고 생산 가능분은 그대로 둔다)
+        thr = threat[p] if g_sh is None else threat[p] - sum(c for j, c in enW.items() if geo.dist[j][p] <= 1) + math.ceil(g_sh[p] - 1e-9)
         need = (min(P["guard_cap"], wforce(p, H, False) + 1) if H > 0
-                else max(1, threat[p] + P["guard_extra"]))
+                else max(1, thr + P["guard_extra"]))
         send_w(p, need, 0)
 
     # 격전지 증원: 적 W 무리 가운데 아군 W 가 hot_radius 안에 있는 곳. 전투는 1:1 상쇄라 뒤에서 기다려도
@@ -1558,6 +1635,7 @@ def decide(view, init):
             return False           # 적 F 가 있는 칸에 엄호 없이 들어가면 경합으로 양쪽 모두 점령 불가
         return threat[v] == 0 or cover[v] > threat[v]
 
+    f_plan = {}           # 이번 턴 F 도착 칸 → 목표(다음 턴 이동 중 엄호용)
     f_units = []          # 명령을 기다리는 깃발병 1명 단위(칸)
     holding = set()       # 이번 턴 점령을 위해 머무는 건물
     for i, c in myF.items():
@@ -1722,6 +1800,8 @@ def decide(view, init):
         u = free_units.pop(k)
         del targets[t]
         for dest, n in ([(u, 1)] if wait else advance(u, "F", 1, t, safe)):
+            if dest != t:
+                f_plan[dest] = t
             if P["f_wait_2step"] and dest == u and u != t:
                 near_en = sum(c for i, c in enW.items() if geo.dist[i][u] <= 2)
                 if near_en > sum(cover[j] for j in geo.near(u)):
@@ -1802,6 +1882,7 @@ def decide(view, init):
         caps.sort(key=lambda i: (-value(bld[i]), geo.nkey(i)))
         commands.append(priority([geo.xy(i) for i in caps]))
     mem.prev_enW = enW
+    mem.f_plan = f_plan
     if STATS_DIR:
         record_stats(view, bld, score_of, n_myF, sum(myF.values()), n_myW + nW)
     return commands

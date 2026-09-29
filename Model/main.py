@@ -214,6 +214,10 @@ P = {
     "lead_w": "reserve",           # 굳히기 중 W 배치: reserve(1-center 예비대) | pressure(공격 방향 예측 주둔) | rapid(주둔+신속 증원)
     "hold_horizon": 3,             # pressure: 이 턴 수 안에 닿는 적 W 를 그 건물의 압력으로 본다
     "hold_trend_w": 1.0,           # pressure: 지난 턴보다 늘어난 적 W(접근 중) 가중
+    # 막판 수세(같은 상태 분기 실험 tools/macro: 141턴부터 아래 값으로 바꾸면 두 번 독립 재현 +0.013·+0.009).
+    # 이 턴 이후에는 eg_def 값을 덮어쓴다(공성 가치↓·경계 반경·전투병 여유↑). 999 = 끔
+    "eg_def_turn": 999,
+    "eg_def": {"w_margin": 32, "guard_radius": 25, "siege_bld_bonus": 4.0, "siege_ring_value": 1.5},
 }
 
 # 로컬 실험용: BOT_PARAMS='{"min_f": 0}' 처럼 파라미터를 덮어쓴다(제출 환경에서는 미설정)
@@ -1542,6 +1546,10 @@ _errors = 0
 def safe_decide(view, init):
     """예외가 나도 END는 출력되도록(몰수패 방지) 빈 명령으로 대체한다."""
     global _errors
+    saved = None
+    if view.turn > P["eg_def_turn"]:
+        saved = {k: P[k] for k in P["eg_def"]}
+        P.update(P["eg_def"])
     try:
         return decide(view, init)
     except Exception:
@@ -1549,6 +1557,9 @@ def safe_decide(view, init):
         if _errors <= 5:
             traceback.print_exc(file=sys.stderr)
         return []
+    finally:
+        if saved:
+            P.update(saved)
 
 
 if __name__ == "__main__":

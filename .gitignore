@@ -5,3 +5,5 @@ out/tune/
 out/rl/
 out/nn/
 out/sub/
+out/macro/*.jsonl
+out/macro/*.log

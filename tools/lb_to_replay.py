@@ -56,12 +56,27 @@ def convert(path: str, team: str) -> tuple[str, dict]:
             if mid in score:
                 score[b["id"]] = score[mid]
 
+    # 본진: 지형의 H 두 칸. 각 진영 유닛이 처음 나타난 칸(생산 직후 1칸 이동)에서 가까운 H 가 그 진영 본진
+    hs = [(x, y) for y, row in enumerate(terrain) for x, c in enumerate(row) if c == "H"]
+    bases = {}
+    for t in turns:
+        for u in _val(t["observation"].get("units") or []):
+            tm, x, y = u[0], u[2], u[3]
+            if tm not in bases and hs:
+                bases[tm] = min(hs, key=lambda h: abs(h[0] - x) + abs(h[1] - y))
+        if len(bases) == 2:
+            break
+    if len(hs) == 2 and len(bases) < 2:
+        known = next(iter(bases.values()), hs[0])
+        tm0 = next(iter(bases), "Y")
+        bases = {tm0: known, ("K" if tm0 == "Y" else "Y"): hs[1] if known == hs[0] else hs[0]}
+
     name = os.path.splitext(os.path.basename(path))[0]
     opp_name = name[2:] if name.startswith("vs") else name
     rp = {
         "seed": src.get("gameId", name),
         "config": {"resource": {"start_resource": 10}},
-        "map": {"width": w, "height": h, "terrain": terrain,
+        "map": {"width": w, "height": h, "terrain": terrain, "bases": {k: list(v) for k, v in bases.items()},
                 "buildings": [{"id": b["id"], "x": b["x"], "y": b["y"], "type": b["type"], "score": score.get(b["id"], 0)}
                               for b in blds]},
         "teams": {side: {"name": f"{team} (우리)", "command": "리더보드"}, opp: {"name": opp_name, "command": "리더보드"}},

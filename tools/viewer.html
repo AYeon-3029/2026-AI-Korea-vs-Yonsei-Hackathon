@@ -157,9 +157,81 @@ let R = null;        // 현재 리플레이
 let frames = [];     // 0 = 시작 상태, n = n턴 종료 상태
 let cur = 0, timer = null;
 
+// 리더보드(서버) 리플레이 = 우리 봇 시점 기록(turns[].observation + command). 뷰어 형식으로 바꾼다.
+// tools/lb_to_replay.py 와 같은 규칙: 미공개 점수는 180° 대칭 짝으로 채우고, 상대 명령은 없다.
+function fromLeaderboard(src, fname) {
+  const side = src.side, opp = side === "Y" ? "K" : "Y";
+  const T = src.turns;
+  const obs0 = T[0].observation;
+  const terrain = obs0.map, h = terrain.length, w = terrain[0].length;
+  const blds = obs0.buildings;
+  const score = {};
+  for (const t of T) {
+    const rv = (t.revealed && t.revealed.buildingScores) || {};
+    for (const [k, v] of Object.entries(rv)) score[+k] = v;
+    for (const b of (t.observation && t.observation.buildings) || []) if (b.score != null) score[b.id] = b.score;
+  }
+  const pos = {};
+  for (const b of blds) pos[`${b.x},${b.y}`] = b.id;
+  for (const b of blds) if (!(b.id in score)) {
+    const mid = pos[`${w - 1 - b.x},${h - 1 - b.y}`];
+    if (mid in score) score[b.id] = score[mid];
+  }
+  const hs = [];
+  terrain.forEach((row, y) => [...row].forEach((c, x) => { if (c === "H") hs.push([x, y]); }));
+  const bases = {};
+  for (const t of T) {
+    for (const u of (t.observation && t.observation.units) || []) {
+      const [tm, , x, y] = u;
+      if (!(tm in bases) && hs.length)
+        bases[tm] = hs.reduce((a, b) => Math.abs(b[0] - x) + Math.abs(b[1] - y) < Math.abs(a[0] - x) + Math.abs(a[1] - y) ? b : a);
+    }
+    if (Object.keys(bases).length === 2) break;
+  }
+  if (hs.length === 2 && Object.keys(bases).length < 2) {
+    const tm0 = Object.keys(bases)[0] || "Y", known = bases[tm0] || hs[0];
+    bases[tm0] = known;
+    bases[tm0 === "Y" ? "K" : "Y"] = known === hs[0] ? hs[1] : hs[0];
+  }
+  const oppName = fname.replace(/\.json$/i, "").replace(/^vs/, "");
+  const out = {
+    seed: src.gameId || fname,
+    config: { resource: { start_resource: 10 } },
+    map: { width: w, height: h, terrain, bases,
+           buildings: blds.map(b => ({ id: b.id, x: b.x, y: b.y, type: b.type, score: score[b.id] ?? 0 })) },
+    teams: { [side]: { name: "우리 (리더보드)" }, [opp]: { name: oppName } },
+    turns: [], result: { ...(src.result || {}) },
+  };
+  const revealed = new Set();
+  for (const t of T.slice(1)) {
+    const o = t.observation || {};
+    for (const i of (t.revealed && t.revealed.buildingIds) || []) revealed.add(+i);
+    const res = o.resources || {}, occ = o.occTurns || {};
+    out.turns.push({
+      turn: o.turn ?? t.turn,
+      commands: { [side]: (t.command && t.command.lines) || [], [opp]: [] },
+      applied: { Y: [], K: [] },
+      events: (o.events || []).map(e => ({ ...e, type: e.type ?? e.kind })),
+      state: {
+        resources: { Y: res.Y ?? 0, K: res.K ?? 0 },
+        units: (o.units || []).map(u => [...u]),
+        buildings: (o.buildings || []).map(b => ({ id: b.id, owner: b.owner ?? "N", stage: b.stage ?? 0 })),
+        revealed: { [side]: [...revealed].sort((a, b) => a - b), [opp]: [] },
+        occupation: { Y: occ.Y ?? 0, K: occ.K ?? 0 },
+      },
+    });
+  }
+  return out;
+}
+
 function load(fileList) {
   const readers = [...fileList].map(f => f.text().then(t => {
-    try { return { name: f.name, data: JSON.parse(t) }; }
+    try {
+      let data = JSON.parse(t);
+      if (!data.map && Array.isArray(data.turns) && data.turns[0] && data.turns[0].observation) data = fromLeaderboard(data, f.name);
+      if (data.map && !data.map.bases) data.map.bases = {};
+      return { name: f.name, data };
+    }
     catch (e) { alert(`${f.name}: JSON 파싱 실패`); return null; }
   }));
   Promise.all(readers).then(list => {

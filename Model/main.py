@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v21.
+"""깃발 대항전 전략 봇 cv-14.
 
 v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
@@ -72,6 +72,10 @@ TELE_MIN_ST = CFG["tele"]["min_stations"]
 
 # 튜닝 파라미터(오프라인 대전으로 조정)
 P = {
+    "cv_cost_scope": 0, "cv_critical_first": False, "cv_siege_cost": 0.0,
+    "cv_job_cost": 0.0, "cv_workload": 0, "cv_source_cost": 0.0,
+    "cv_urgent": False, "cv_arrival": 0.0, "cv_recap_assign": False,
+    "cv_intercept": False, "cv_cut_link": False, "cv_neutral": False,
     "center_expect": 1.577,      # 중앙 건물 미공개 점수 기댓값(2~4) v6: 3.0 → 2.75 v9: 2.75 → 2.35 v12: 2.35 → 2.6779 v13: 2.6779 → 2.2857 v15: 2.2857 → 2.2431 v17: 2.2431 → 1.577
     "side_expect": 1.309,        # 신촌·안암 건물 미공개 점수 기댓값(1~2) v6: 1.5 → 1.1 v9: 1.1 → 1.08 v12: 1.08 → 1.2012 v13: 1.2012 → 1.2124 v15: 1.2124 → 1.2623 v17: 1.2623 → 1.309
     "hall_bonus": 14.735,         # 학생회관 기능 가치(남은 턴 비율을 곱함). v4 2.5 → 탐색 결과 5.0 v6: 5.0 → 7.15 v9: 7.15 → 9.15 v12: 9.15 → 9.23 v13: 9.23 → 9.6127 v14: 9.6127 → 8.7462 v15: 8.7462 → 11.241 v17: 11.241 → 14.735
@@ -333,6 +337,9 @@ P = {
     "eg_def_turn": 999,
     "eg_def": {"w_margin": 32, "guard_radius": 25, "siege_bld_bonus": 4.0, "siege_ring_value": 1.5},
 }
+
+# cv-14: confirmed against v21 on 296000-296095.
+P.update({'cv_job_cost': 0.021724022405676, 'cv_cost_scope': 2, 'dist_offset': 7.31129590395668, 'block_worth': 2.745990966387539})
 
 # 로컬 실험용: BOT_PARAMS='{"min_f": 0}' 처럼 파라미터를 덮어쓴다(제출 환경에서는 미설정)
 if os.environ.get("BOT_PARAMS"):
@@ -787,6 +794,13 @@ def decide(view, init):
     if comeback:
         cap_f = max(cap_f, P["cb_max_f"])
         eff_local_w *= P["cb_risk_scale"]
+    if P["cv_workload"] and n_myW >= n_enW:
+        uncovered = sum(1 for t in targets_all
+            if myW.get(t, 0) >= max(1, threat[t])
+            and min((geo.dist[f][t] for f in myF), default=INF) > 3
+            and min(geo.dist[z][t] for z in spawn_me) <= min(8, left))
+        if uncovered:
+            cap_f += min(P["cv_workload"], uncovered)
     des_F = min(cap_f, n_goals)
     recap_goal = None
     recap_n = P["recap_f"]
@@ -893,8 +907,10 @@ def decide(view, init):
             commands.append(spawn(kind, n, *geo.xy(cell)))
         table[cell] = table.get(cell, 0) + n
 
+    recap_source = None
     if recap_goal is not None and nF:
-        emit_spawn("F", 1, best_spawn([recap_goal]), myF)
+        recap_source = best_spawn([recap_goal])
+        emit_spawn("F", 1, recap_source, myF)
         nF -= 1
     emit_spawn("F", nF, best_spawn(targets_all), myF)
     w_goals = {"enf": list(enF), "myf": list(myF), "mix": list(enF) + list(myF)}[P["w_spawn"]]
@@ -1242,6 +1258,16 @@ def decide(view, init):
         if DBG is not None and view.turn in DBG_TURNS:
             DBG.append((wmode.get("tag", "?"), geo.xy(g), bld[g]["type"][:4] if g in bld else "", need,
                         sum(w_pool[t[2]] for t in near_ws), [(geo.xy(t[2]), w_pool[t[2]], t[0]) for t in near_ws[:4]]))
+        if P["cv_source_cost"]:
+            def source_key(item):
+                d, tie, i = item
+                penalty = 0
+                if i != g and i in bld and bld[i]["owner"] == me:
+                    eta = min((geo.dist[e][i] for e in enF), default=INF)
+                    if eta <= 3 and w_pool[i] + cover[i] <= threat[i] + 1:
+                        penalty = P["cv_source_cost"] * value(bld[i]) / max(1, eta)
+                return (d + penalty, tie)
+            near_ws.sort(key=source_key)
         timely = [t for t in near_ws if t[0] <= deadline]
         if deadline < INF and sum(w_pool[t[2]] for t in timely) >= need:
             near_ws = timely
@@ -1439,7 +1465,73 @@ def decide(view, init):
             if not any(geo.dist[j][v] <= P["fesc_R"] for j in enW):
                 continue
             jobs.append((value(bld[t]) + P["fesc_worth"], v, threat[v] + P["fesc_n"], 1, -1))
-    jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
+    if P["cv_intercept"]:
+        # Predicted approach to our building occupied by enemy W. Prediction is
+        # a hypothesis, not a guaranteed opponent move; only locally feasible raids.
+        for e in sorted(enF, key=geo.nkey):
+            goals = [t for t, b in bld.items() if b["owner"] == me
+                     and enW.get(t, 0) and 1 <= geo.dist[e][t] <= 4]
+            if not goals:
+                continue
+            t = min(goals, key=lambda t: (geo.dist[e][t], -value(bld[t]), geo.nkey(t)))
+            options = [v for _, v in geo.nbrs[e] if geo.dist[v][t] < geo.dist[e][t]]
+            for v in options:
+                need = threat[v] + 1
+                if sum(n for u, n in w_pool.items() if geo.dist[u][v] <= 1) >= need:
+                    jobs.append((value(bld[t]) + 2, v, need, 1, -1))
+    if P["cv_cut_link"] and len(opp_st) >= TELE_MIN_ST:
+        home = [t for t,b in bld.items() if b["owner"] == me]
+        for t in opp_st:
+            incoming = sum(enW.get(q, 0) + enF.get(q, 0) for q in opp_st if q != t)
+            if incoming and min((geo.dist[t][g] for g in home), default=INF) <= 4:
+                fd = min((geo.dist[f][t] for f in myF), default=INF)
+                if fd <= 4:
+                    jobs.append((value(bld[t]) + min(8, incoming), t, threat[t] + 1, INF, -1))
+    if P["cv_neutral"]:
+        for t,b in bld.items():
+            if b["owner"] == "N" and min((geo.dist[f][t] for f in myF), default=INF) <= 2:
+                need = max(1, threat[t])
+                if sum(n for u,n in w_pool.items() if geo.dist[u][t] <= 2) >= need:
+                    jobs.append((value(b) + 2, t, need, 2, -1))
+    urgent_done = set()
+    if P["cv_urgent"]:
+        # Reserve only a feasible imminent defense, not a permanent garrison.
+        urgent=[]
+        for t,b in bld.items():
+            if b["owner"] == me and b["type"] in ("HALL", "ENG"):
+                eta = min((geo.dist[e][t] for e in enF), default=INF)
+                if eta <= 2:
+                    horizon = max(1, eta)
+                    need = sum(n for e,n in enW.items() if geo.dist[e][t] <= horizon) + 1
+                    if horizon == 1:
+                        need = max(need, threat[t] + 1)
+                    urgent.append((horizon, -value(b), geo.nkey(t), t, need))
+        for horizon, _, _, t, need in sorted(urgent):
+            if sum(n for u,n in w_pool.items() if geo.dist[u][t] <= horizon) >= need:
+                send_w(t, need, -1, horizon)
+                urgent_done.add(t)
+    def job_key(job):
+        worth, t, need, deadline, stage = job
+        cost = 0
+        coefficient = P["cv_job_cost"]
+        scope = P["cv_cost_scope"]
+        if (scope == 1 and deadline < INF
+                or scope == 2 and t in bld and bld[t]["owner"] == me
+                or scope == 3 and (t not in bld or bld[t]["owner"] != opp)):
+            coefficient = 0
+        if coefficient:
+            remaining = max(0, need - cover[t])
+            for d, _, n in sorted((geo.dist[u][t], geo.nkey(u), n) for u,n in w_pool.items() if n):
+                used = min(n, remaining)
+                cost += used * (1 + d)
+                remaining -= used
+                if not remaining: break
+            cost += remaining * 100
+        critical = (P["cv_critical_first"] and t in bld and bld[t]["owner"] == me
+                    and deadline <= 2
+                    and sum(n for u,n in w_pool.items() if geo.dist[u][t] <= deadline) >= need)
+        return (-int(critical), -worth / (1 + coefficient * cost), geo.nkey(t))
+    jobs.sort(key=job_key)
 
     sR = max(P["sticky_R"], left if P["final_T"] and left <= P["final_T"] else 0)
     if sR and enF:
@@ -1453,7 +1545,7 @@ def decide(view, init):
             k = min(onp, sum(c for j, c in enW.items() if geo.dist[j][p] <= dF) + 1)
             w_pool[p] -= k                 # 명령 없는 W 는 제자리에 남는다
             cover[p] += k
-    done_goals = set()
+    done_goals = urgent_done
     wmode["tag"] = "job"
     for worth, g, need, deadline, stage in jobs:
         if g in done_goals:
@@ -1641,7 +1733,19 @@ def decide(view, init):
                 share = int(total * v / tv)
                 if share > 0 and any(c > 0 for c in w_pool.values()):
                     send_w(h, share, -1)
-    siege.sort(key=lambda t: (-t[0], geo.nkey(t[1])))
+    def siege_key(item):
+        worth, t = item
+        cost = 0
+        if P["cv_siege_cost"]:
+            remaining = max(0, threat[t] + 1 - cover[t])
+            for d, _, n in sorted((eff_dist(u,t), geo.nkey(u), n) for u,n in w_pool.items() if n):
+                used = min(n, remaining)
+                cost += used * (1 + d)
+                remaining -= used
+                if not remaining: break
+            cost += remaining * 100
+        return (-worth / (1 + P["cv_siege_cost"] * cost), geo.nkey(t))
+    siege.sort(key=siege_key)
     wmode["siege"] = True
     # 미끼(사용자 제안): 규칙 봇은 위협받는 건물에 '위협 + 1' 명을 보내 지킨다. 본대 공성 목표 T 에서 멀리 떨어진 적 건물 D 옆 칸에
     # feint_n 명을 세워 위협만 만들고(들어가지 않는다) 적 수비를 D 로 끌어내 T 를 얇게 만든다. D 는 유효한 동안 유지한다.
@@ -1821,6 +1925,26 @@ def decide(view, init):
         delta, wait = tr_cache[key]
         return base + delta, wait
 
+    if P["cv_recap_assign"] and recap_source in free_units and recap_goal in targets:
+        free_units.remove(recap_source)
+        targets.pop(recap_goal)
+        for dest, n in advance(recap_source, "F", 1, recap_goal, safe):
+            if dest != recap_goal:
+                f_plan[dest] = recap_goal
+            fdbg(recap_source, dest, 'recap')
+            final_F[dest] = final_F.get(dest, 0) + n
+    arrival_cache = {}
+    def arrival_mult(t, d):
+        # ponytail: bounded arrival-force estimate; ignores future enemy production
+        # and competing orders. Replace with rollout only if this proxy validates.
+        horizon = min(6, max(2, int(d)))
+        key = (t, horizon)
+        if key not in arrival_cache:
+            enemy = sum(n for e,n in enW.items() if geo.dist[e][t] <= horizon)
+            ours = sum(n for u,n in myW.items() if geo.dist[u][t] <= horizon)
+            gap = max(0, enemy - ours)
+            arrival_cache[key] = 1 / (1 + P["cv_arrival"] * gap)
+        return arrival_cache[key]
     while free_units and targets:
         best = None
         ranked = []
@@ -1851,6 +1975,8 @@ def decide(view, init):
                     s = max(0.05 * s, s - P["la_short"] * shortfall(t, int(d)))
                 if P["frontier_targets"]:
                     s *= hold_mult(t, d)
+                if P["cv_arrival"] and not endgame:
+                    s *= arrival_mult(t, d)
                 s /= d + P["dist_offset"]
                 key = (-s, geo.nkey(u), geo.nkey(t))
                 if P["tactical_rollout"]:

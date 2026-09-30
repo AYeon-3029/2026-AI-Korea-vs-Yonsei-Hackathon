@@ -1,0 +1,8 @@
+# Keep release bytes identical to the snapshot and submission ZIP.
+# Leading slashes restrict these rules to production, not historical versions.
+/main.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/campus_bot.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/protocol.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/_generated.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/tactical.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/submission.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 cv-3.
+"""깃발 대항전 전략 봇 v20.
 
 v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
@@ -49,6 +49,7 @@ v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 �
     W 를 먼저 보내 같은 턴 도착) + 경제 공격대 home 모드(수 동률이어도 우리 진영 학생회관·공학관을 적이 가지면 발동).
     v17 대비 새 시드 91000·92000번대 현실 풀 +0.027±0.006·+0.044±0.006(7200쌍씩), 공세형 +0.036±0.010·+0.021±0.009(3600쌍씩).
 21. v19: v18 + F 위험 탈출(F 사망 진단 tools/macro/fdeath.py: 사망 93% 가 이미 위험한 칸에 갇힌 F) — 목표 위 F 가 위험하면 안전한 옆 칸으로(f_goal_flee 1), 사방 위험이면 (위협−엄호) 최소 칸(f_trap_min). v18 대비 새 시드 101000번대 현실 풀 +0.071±0.007(4800쌍), 공세형 +0.089±0.010(2400쌍), 실제 상태 +0.046±0.010(1328쌍).
+v20 = cv-3 + 탈환 F(recap_f 1, recap_R 1): 잃은 우리 쪽 학관·공학관 근처에 F 가 없으면 상한을 넘겨 가장 가까운 거점에서 F 1명을 뽑는다. 새 시드 2벌 x 현실/공세/흉내 모두 +0.004~+0.016
 """
 import json
 import math
@@ -297,6 +298,14 @@ P = {
     "f_goal_flee": 1,              # 목표 위 F 가 위험하면 안전한 옆 칸으로 비킨다. 1 = 전체 위협(생산 가능분 포함), 2 = 실제 적 W 만 v19: 0 → 1
     "f_trap_min": True,           # 사방이 위험하면 목표 쪽 전진 대신 (위협 − 엄호)가 가장 작은 칸(제자리 포함) v19: False → True
     "cv_safe_equal": True,       # cv-3: W 동수 상쇄 후 적 W가 없으면 F 생존
+    "sticky_R": 0,                 # dev26: 적 F 가 이 거리 안인 우리 건물 위 W 는 다른 작업에 빼앗기지 않게 먼저 묶는다(0 = 끔)
+    "guard_fplus": False,          # dev26: 경계 인원에 적 F 가 2칸 안이면 +1(동수 상쇄 뒤 적 F 생존 방지)
+    "recap_f": 1,                  # dev26: 잃은 우리 쪽 학관·공학관 근처에 F 가 없으면 상한을 넘겨 F 를 이만큼 더 뽑는다 v20: 0 → 1
+    "final_T": 0,                  # dev26: 남은 턴이 이 이하이면 적 F 가 남은 턴 안에 닿는 우리 건물 W 를 묶고(sticky) 차단 반경을 남은 턴까지 넓힌다
+    "final_w": 0.0,                #        그 막판 차단 작업 가치 가산
+    "recap_R": 1,  # v20: 3 → 1
+    "recap_all": False,            #        True 면 학관·공학관만이 아니라 우리 쪽(우리 본진이 더 가까운) 모든 건물
+                  #        가장 가까운 F 가 (거점 거리 + recap_R) 보다 멀면 발동
     # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
     # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
     "strike_w": 2,  # v17: 0 → 2
@@ -766,6 +775,19 @@ def decide(view, init):
         cap_f = max(cap_f, P["cb_max_f"])
         eff_local_w *= P["cb_risk_scale"]
     des_F = min(cap_f, n_goals)
+    recap_goal = None
+    if P["recap_f"]:
+        def _rc(b):
+            return (geo.dist[base_me][b] < geo.dist[base_opp][b]) if P["recap_all"] else home_eco(b)
+        for b in sorted((b for b in bld if _rc(b) and bld[b]["owner"] != me and not enF.get(b, 0)),
+                        key=lambda b: (-value(bld[b]), geo.nkey(b))):
+            dF = min((geo.dist[i][b] for i in myF), default=INF)
+            ds = min(geo.dist[s][b] for s in spawn_me)
+            if dF > ds + P["recap_R"] and threat_w[b] <= sum(c for i, c in myW.items() if geo.dist[i][b] <= 1):
+                recap_goal = b
+                break
+        if recap_goal is not None:
+            des_F = max(des_F, min(n_goals, n_myF + P["recap_f"]))
     min_F = min(max(P["eg_min_f"] if eg_f else P["min_f"], P["cb_min_f"] if comeback else 0), des_F)
     if P["rush_k"] and view.turn <= P["rush_turn"]:
         min_F = max(1, min_F - int(P["rush_k"] * max(0, sum(enW.values()) - sum(myW.values()))))
@@ -851,6 +873,9 @@ def decide(view, init):
             commands.append(spawn(kind, n, *geo.xy(cell)))
         table[cell] = table.get(cell, 0) + n
 
+    if recap_goal is not None and nF:
+        emit_spawn("F", 1, best_spawn([recap_goal]), myF)
+        nF -= 1
     emit_spawn("F", nF, best_spawn(targets_all), myF)
     w_goals = {"enf": list(enF), "myf": list(myF), "mix": list(enF) + list(myF)}[P["w_spawn"]]
     emit_spawn("W", nW, best_spawn(w_goals or list(enF) or [base_opp]), myW)
@@ -1316,11 +1341,12 @@ def decide(view, init):
             eco = P["eco_block_extra"] and bb["type"] in ("HALL", "ENG")
             # 마지막 공학관: 잃으면 W 단가 2 → 3(50%↑). 20~40턴 W 격차의 주원인이 단가 차(이긴 경기 2.05:2.18, 진 경기 2.20:2.06)
             last_eng = bb["type"] == "ENG" and len(owned(me, "ENG")) == 1
-            if k > P["f_block"] + (P["eco_block_extra"] if eco else 0) + (P["eng_last_extra"] if last_eng else 0):
+            fin = bool(P["final_T"]) and left <= P["final_T"] and k <= left
+            if k > P["f_block"] + (P["eco_block_extra"] if eco else 0) + (P["eng_last_extra"] if last_eng else 0) and not fin:
                 continue
-            blk.append((b, bb, k, eco, last_eng))
-        shared = shared_count({b: k for b, _, k, _, _ in blk}, P["block_share"]) if P["block_share"] else None
-        for b, bb, k, eco, last_eng in blk:
+            blk.append((b, bb, k, eco, last_eng, fin))
+        shared = shared_count({b: k for b, _, k, _, _, _ in blk}, P["block_share"]) if P["block_share"] else None
+        for b, bb, k, eco, last_eng, fin in blk:
             if shared is not None:
                 need = math.ceil(shared[b] - 1e-9) + 1 + P["block_extra"]
             else:
@@ -1334,7 +1360,7 @@ def decide(view, init):
                 if timely < need:
                     continue
             jobs.append((P["block_worth"] + value(bb) + (P["eco_block_worth"] if eco else 0.0)
-                         + (P["eng_last_w"] if last_eng else 0.0), b, need + (P["eng_last_need"] if last_eng else 0), k, -1))
+                         + (P["eng_last_w"] if last_eng else 0.0) + (P["final_w"] if fin else 0.0), b, need + (P["eng_last_need"] if last_eng else 0), k, -1))
     if P["hold_new"]:
         en_cells = list(enF) + list(enW)
         for b, bb in bld.items():
@@ -1393,6 +1419,18 @@ def decide(view, init):
             jobs.append((value(bld[t]) + P["fesc_worth"], v, threat[v] + P["fesc_n"], 1, -1))
     jobs.sort(key=lambda j: (-j[0], geo.nkey(j[1])))
 
+    sR = max(P["sticky_R"], left if P["final_T"] and left <= P["final_T"] else 0)
+    if sR and enF:
+        for p, bb in bld.items():
+            onp = w_pool.get(p, 0)
+            if bb["owner"] != me or onp <= 0 or hopeless(p):
+                continue
+            dF = min(geo.dist[e][p] for e in enF)
+            if dF > sR:
+                continue
+            k = min(onp, sum(c for j, c in enW.items() if geo.dist[j][p] <= dF) + 1)
+            w_pool[p] -= k                 # 명령 없는 W 는 제자리에 남는다
+            cover[p] += k
     done_goals = set()
     wmode["tag"] = "job"
     for worth, g, need, deadline, stage in jobs:
@@ -1476,7 +1514,8 @@ def decide(view, init):
         # (나눠 세기: 1턴 위협 중 적 W 몫만 나누고 생산 가능분은 그대로 둔다)
         thr = threat[p] if g_sh is None else threat[p] - sum(c for j, c in enW.items() if geo.dist[j][p] <= 1) + math.ceil(g_sh[p] - 1e-9)
         need = (min(P["guard_cap"], wforce(p, H, False) + 1) if H > 0
-                else max(1, thr + P["guard_extra"]))
+                else max(1, thr + P["guard_extra"]
+                         + (1 if P["guard_fplus"] and any(geo.dist[e][p] <= 2 for e in enF) else 0)))
         send_w(p, need, 0)
 
     # 격전지 증원: 적 W 무리 가운데 아군 W 가 hot_radius 안에 있는 곳. 전투는 1:1 상쇄라 뒤에서 기다려도

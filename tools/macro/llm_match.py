@@ -214,7 +214,13 @@ def main():
         return
     if a.cmd == "api":
         import anthropic
-        client = anthropic.Anthropic()
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        kf = os.path.expanduser("~/.anthropic_key")      # 환경변수가 없으면 WSL 홈의 키 파일(저장소 밖)을 읽는다
+        if not key and os.path.exists(kf):
+            key = open(kf).read().strip()
+        if not key:
+            sys.exit("API 키 없음: WSL 에서  echo '<키>' > ~/.anthropic_key && chmod 600 ~/.anthropic_key")
+        client = anthropic.Anthropic(api_key=key)
         while True:
             g, side, t, text = replay(a.game)
             if t is None:

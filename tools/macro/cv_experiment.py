@@ -50,11 +50,17 @@ def main():
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--out", required=True)
     p.add_argument("--baseline", default="v19")
+    p.add_argument("--extra-opponents", help="Frozen JSON mapping name to {ver, params}")
     p.add_argument("--pool", choices=("legacy", "mimic", "all"), default="legacy")
     a = p.parse_args()
     candidates = json.loads(Path(a.candidates).read_text())
     assert a.baseline not in candidates, "Baseline name is reserved"
     groups = {}
+    if a.extra_opponents:
+        extra = json.loads(Path(a.extra_opponents).read_text())
+        assert not set(extra) & set(OPPS), "Extra opponent names must be unique"
+        OPPS.update({n: (s["ver"], s["params"]) for n, s in extra.items()})
+        groups["hidden"] = list(extra)
     if a.pool in ("legacy", "all"):
         groups.update(real=REAL_POOL, push=PUSH_POOL)
     if a.pool in ("mimic", "all"):

@@ -35,8 +35,8 @@ NAMES = {"HALL": "학생회관(+2/턴)", "ENG": "공학관(W 비용 -1)", "LIBRA
          "STATION": "역(TELE)", "HOSPITAL": "병원(전진 생산)", "WATCH": "방송국", "DEPOT": "보급소(+15 1회)"}
 
 
-def posture_params(p: str) -> dict:
-    b = module(LLM_VER).P
+def posture_params(p: str, ver: str = LLM_VER) -> dict:
+    b = module(ver).P
     if p == "attack":
         return {"w_margin": max(8, b["w_margin"] - 6), "siege_bld_bonus": b["siege_bld_bonus"] * 1.3,
                 "guard_radius": max(4, b["guard_radius"] - 4), "risk_local_w": b["risk_local_w"] * 0.7}
@@ -48,6 +48,11 @@ def posture_params(p: str) -> dict:
 
 def gdir(game):
     return os.path.join(ROOT, "out/llm", game)
+
+
+def vers(meta):
+    """경기별 (지휘관 봇, 상대 봇). meta.json 에 없으면 처음 12경기 설정(dev24 대 cv-3)."""
+    return meta.get("llm", LLM_VER), meta.get("opp", OPP_VER)
 
 
 def summary(g: Game, side: str, prev_owner: dict) -> str:
@@ -118,10 +123,11 @@ W 가 남은 쪽이 상대 F 를 제거. 160턴 뒤 보유 건물 점수 합이 
 def replay(game):
     meta = json.load(open(os.path.join(gdir(game), "meta.json"), encoding="utf-8"))
     side = meta["side"]
-    me = Agent(LLM_VER, {})
-    op = Agent(OPP_VER, {})
+    lv, ov = vers(meta)
+    me = Agent(lv, {})
+    op = Agent(ov, {})
     g = Game(meta["seed"], *((me, op) if side == "Y" else (op, me)))
-    m = module(LLM_VER)
+    m = module(lv)
     prev_owner = {(b.x, b.y): b.owner for b in g.state.buildings.values()}
     cmd = None
     while g.result is None:
@@ -131,7 +137,7 @@ def replay(game):
             if not os.path.exists(p):
                 return g, side, t, summary(g, side, prev_owner)
             cmd = json.load(open(p, encoding="utf-8"))
-            me.set_params({**posture_params(cmd.get("posture", "balanced")),
+            me.set_params({**posture_params(cmd.get("posture", "balanced"), lv),
                            **({"max_f": int(cmd["max_f"])} if cmd.get("max_f") else {})})
             prev_owner = {(b.x, b.y): b.owner for b in g.state.buildings.values()}
         m.CMD = {"focus": [list(v) for v in cmd.get("focus", [])], "defend": [list(v) for v in cmd.get("defend", [])]} if cmd else None
@@ -145,15 +151,17 @@ def export(game):
     저장 위치: out/replays/llm/<game>-seed<시드>-LLM<진영>.json"""
     meta = json.load(open(os.path.join(gdir(game), "meta.json"), encoding="utf-8"))
     side, seed = meta["side"], meta["seed"]
-    me = Agent(LLM_VER, {})
-    op = Agent(OPP_VER, {})
+    lv, ov = vers(meta)
+    me = Agent(lv, {})
+    op = Agent(ov, {})
     g = Game(seed, *((me, op) if side == "Y" else (op, me)))
     gmap = generate(seed, CFG)
-    teams = {side: {"name": f"LLM 지휘관 ({LLM_VER} = cv-3 + 지휘)", "command": "tools/macro/llm_match.py"},
-             ("K" if side == "Y" else "Y"): {"name": OPP_VER, "command": f"Model/history/{OPP_VER}/main.py"}}
+    base = {"dev24": "cv-3", "dev27": "v20"}.get(lv, lv)
+    teams = {side: {"name": f"LLM 지휘관 ({lv} = {base} + 지휘)", "command": "tools/macro/llm_match.py"},
+             ("K" if side == "Y" else "Y"): {"name": ov, "command": f"Model/history/{ov}/main.py"}}
     rp = new_replay(seed, CFG, gmap, teams)
     rp["llm_commands"] = {}
-    m = module(LLM_VER)
+    m = module(lv)
     cmd = None
     while g.result is None:
         t = g.state.turn
@@ -163,7 +171,7 @@ def export(game):
                 raise SystemExit(f"{game}: {t}턴 명령이 없다 — 경기가 끝나지 않았다")
             cmd = json.load(open(p, encoding="utf-8"))
             rp["llm_commands"][str(t)] = cmd
-            me.set_params({**posture_params(cmd.get("posture", "balanced")),
+            me.set_params({**posture_params(cmd.get("posture", "balanced"), lv),
                            **({"max_f": int(cmd["max_f"])} if cmd.get("max_f") else {})})
         m.CMD = {"focus": [list(v) for v in cmd.get("focus", [])], "defend": [list(v) for v in cmd.get("defend", [])]} if cmd else None
         turn = t + 1

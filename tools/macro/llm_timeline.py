@@ -1,4 +1,4 @@
-"""LLM 지휘 경기를 cv-3 쪽에서 본 타임라인: 10턴마다 점수·W·자원·건물 수, 그리고 cv-3 F 전사(주변 아군 W 유무)·건물 득실.
+"""LLM 지휘 경기를 일반 봇 쪽에서 본 타임라인: 10턴마다 점수·W·자원·건물 수와 건물 득실.
 사용 (WSL): python3 tools/macro/llm_timeline.py b150005 [b150007 ...]
 """
 from __future__ import annotations
@@ -23,14 +23,14 @@ def main(game):
     g = Game(meta["seed"], *((llm, o) if meta["side"] == "Y" else (o, llm)))
     m = L.module(meta.get("llm", L.LLM_VER))
     cmd = None
-    print(f"##### {game} 시드 {meta['seed']}  cv-3={cv} 본진 {g.state.bases[cv]}  LLM={op} 본진 {g.state.bases[op]}")
+    print(f"##### {game} 시드 {meta['seed']}  {meta.get('opp', L.OPP_VER)}={cv} 본진 {g.state.bases[cv]}  LLM={op} 본진 {g.state.bases[op]}")
     prev_own = {(b.x, b.y): b.owner for b in g.state.buildings.values()}
     while g.result is None:
         t = g.state.turn
         p = os.path.join(L.gdir(game), f"cmd_{t:03d}.json")
         if t % L.EVERY == 0 and os.path.exists(p):
             cmd = json.load(open(p, encoding="utf-8"))
-            llm.set_params({**L.posture_params(cmd.get("posture", "balanced")),
+            llm.set_params({**L.posture_params(cmd.get("posture", "balanced"), meta.get("llm", L.LLM_VER)),
                             **({"max_f": int(cmd["max_f"])} if cmd.get("max_f") else {})})
         m.CMD = {"focus": cmd.get("focus", []), "defend": cmd.get("defend", [])} if cmd else None
         before = dict(g.state.units)
@@ -59,6 +59,7 @@ def main(game):
                   f"건물 {nb[cv]}:{nb[op]}  자원 {s.resources[cv]}:{s.resources[op]}  "
                   f"학·공 {sum(1 for b in s.buildings.values() if b.owner == cv and b.btype in ('HALL', 'ENG'))}:"
                   f"{sum(1 for b in s.buildings.values() if b.owner == op and b.btype in ('HALL', 'ENG'))}")
+    m.CMD = None
     print(f"결과 {g.result}")
 
 

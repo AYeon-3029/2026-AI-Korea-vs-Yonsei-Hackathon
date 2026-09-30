@@ -148,7 +148,7 @@ def run_llm(game):
         if t % L.EVERY == 0 and os.path.exists(p):
             cmd = json.load(open(p, encoding="utf-8"))
             st["cmd"] = cmd
-            llm.set_params({**L.posture_params(cmd.get("posture", "balanced")),
+            llm.set_params({**L.posture_params(cmd.get("posture", "balanced"), meta.get("llm", L.LLM_VER)),
                             **({"max_f": int(cmd["max_f"])} if cmd.get("max_f") else {})})
         cmd = st["cmd"]
         m.CMD = {"focus": [list(v) for v in cmd.get("focus", [])], "defend": [list(v) for v in cmd.get("defend", [])]} if cmd else None

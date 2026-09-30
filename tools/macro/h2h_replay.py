@@ -23,7 +23,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 def play(args):
     seed, side, a, b, rec = args
-    A, B = Agent(a, {}), Agent(b, {})
+    from branch import OPPS
+    A, B = Agent(a, {}), (Agent(*OPPS[b]) if b in OPPS else Agent(b, {}))
     g = Game(seed, *((A, B) if side == "Y" else (B, A)))
     rp = None
     if rec:

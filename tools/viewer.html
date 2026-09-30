@@ -72,7 +72,7 @@ pre.cmds { margin: 0; max-height: 170px; overflow: auto; background: var(--bg); 
   padding: 6px 8px; font: 11.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
 .bad { color: var(--combat); }
 .evlist { font-size: 12px; max-height: 120px; overflow: auto; }
-#chart { width: 100%; height: 120px; display: block; }
+#chart, #chart2 { width: 100%; height: 120px; display: block; }
 .tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); z-index: 9; }
 .result { font-weight: 700; }
@@ -133,6 +133,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-si
         <div class="stats" id="stats"></div>
         <h3>점수 추이</h3>
         <svg id="chart" preserveAspectRatio="none"></svg>
+        <h3>병력 비용 추이 <span class="muted">(살아 있는 유닛: F 5 · S 2 · W 그 팀 현재 단가)</span></h3>
+        <svg id="chart2" preserveAspectRatio="none"></svg>
         <h3>이번 턴 이벤트</h3>
         <div class="evlist" id="events"></div>
         <h3><span class="cy">Y</span> 명령 <span class="muted" id="ny"></span></h3>
@@ -265,6 +267,7 @@ function open(i) {
   $("slider").max = frames.length - 1;
   $("drop").hidden = true;
   $("app").hidden = false;
+  computeStats();
   buildBoard();
   drawChart();
   show(0);
@@ -353,7 +356,10 @@ function show(n) {
     row("깃발병 F", uy.F, uk.F) +
     row("전투병 W", uy.W, uk.W) +
     row("정찰병 S", uy.S, uk.S) +
-    row("누적 점령-턴", st.occupation.Y, st.occupation.K);
+    row("누적 점령-턴", st.occupation.Y, st.occupation.K) +
+    row("누적 사망 W", f.dead.Y.W, f.dead.K.W) +
+    row("누적 사망 F", (R._est.Y ? "≈" : "") + f.dead.Y.F, (R._est.K ? "≈" : "") + f.dead.K.F) +
+    row("병력 비용", f.cost.Y, f.cost.K);
 
   const evs = (f.events || []).map(e => {
     const nm = bAt[`${e.x},${e.y}`] ? FULL[bAt[`${e.x},${e.y}`].type] : "";
@@ -392,6 +398,88 @@ function tip(ev, x, y) {
   t.style.top = (ev.clientY + 14) + "px";
 }
 
+
+// 누적 사망·병력 비용. 명령이 있는 팀: 사망 = 직전 수 + 생산(SPAWN) − 현재 수(정확).
+// W 는 같은 칸 1:1 상쇄로만 죽으므로 양 팀 W 사망은 같다(한쪽만 알아도 정확).
+// 명령이 없는 팀(리더보드 파일의 상대): F 생산을 자원 변화(수입·점령 비용·보급소)로 추정 → "≈" 표시.
+function wCost(st, t) {
+  const n = st.buildings.filter((x, j) => x.owner === t && R.map.buildings[j].type === "ENG").length;
+  return Math.max(2, 3 - n);
+}
+function costOf(st) {
+  const o = {};
+  for (const t of ["Y", "K"]) {
+    const u = unitSum(st, t);
+    o[t] = u.F * 5 + u.S * 2 + u.W * wCost(st, t);
+  }
+  return o;
+}
+function computeStats() {
+  const BT = {};
+  R.map.buildings.forEach(b => BT[`${b.x},${b.y}`] = b);
+  const known = { Y: false, K: false };
+  for (const f of frames) for (const t of ["Y", "K"]) if (((f.commands || {})[t] || []).length) known[t] = true;
+  const cnt = st => {
+    const o = { Y: { F: 0, W: 0, S: 0 }, K: { F: 0, W: 0, S: 0 } };
+    for (const [t, k, , , c] of st.units) if (o[t] && k in o[t]) o[t][k] += c;
+    return o;
+  };
+  const acc = { Y: { F: 0, W: 0, S: 0 }, K: { F: 0, W: 0, S: 0 } };
+  const depotGot = { Y: new Set(), K: new Set() };
+  const snap = () => JSON.parse(JSON.stringify(acc));
+  frames[0].dead = snap();
+  frames[0].cost = costOf(frames[0].state);
+  for (let i = 1; i < frames.length; i++) {
+    const pf = frames[i - 1], f = frames[i], a = cnt(pf.state), b = cnt(f.state);
+    const spawn = { Y: { F: 0, W: 0, S: 0 }, K: { F: 0, W: 0, S: 0 } };
+    for (const t of ["Y", "K"]) for (const line of ((f.commands || {})[t] || [])) {
+      const p = String(line).trim().split(/\s+/);
+      if (p[0] === "SPAWN" && p[1] in spawn[t]) spawn[t][p[1]] += +p[2] || 0;
+    }
+    const d = { Y: { F: 0, W: 0, S: 0 }, K: { F: 0, W: 0, S: 0 } };
+    for (const t of ["Y", "K"]) if (known[t]) for (const k of ["F", "W", "S"]) d[t][k] = Math.max(0, a[t][k] + spawn[t][k] - b[t][k]);
+    for (const t of ["Y", "K"]) if (!known[t]) {
+      const o = t === "Y" ? "K" : "Y";
+      d[t].W = known[o] ? d[o].W : 0;
+      const spawnW = Math.max(0, b[t].W - a[t].W + d[t].W);
+      const halls = f.state.buildings.filter((x, j) => x.owner === t && R.map.buildings[j].type === "HALL").length;
+      const lib = pf.state.buildings.some((x, j) => x.owner === t && R.map.buildings[j].type === "LIBRARY");
+      let cap = 0, dep = 0;
+      for (const e of f.events || []) if (e.team === t && (e.type === "capture" || e.type === "neutralize")) {
+        const bb = BT[`${e.x},${e.y}`];
+        cap += Math.max(1, 2 * (bb && bb.type === "PLAZA" ? 2 : 1) - (lib ? 1 : 0));
+        if (e.type === "capture" && bb && bb.type === "DEPOT" && !depotGot[t].has(bb.id)) { depotGot[t].add(bb.id); dep += 15; }
+      }
+      const spend = pf.state.resources[t] + 10 + 2 * halls - cap + dep - f.state.resources[t];
+      const nF = Math.max(0, Math.round((spend - wCost(pf.state, t) * spawnW) / 5));
+      d[t].F = Math.max(0, a[t].F + nF - b[t].F);
+    }
+    for (const t of ["Y", "K"]) for (const k of ["F", "W", "S"]) acc[t][k] += d[t][k];
+    f.dead = snap();
+    f.cost = costOf(f.state);
+  }
+  R._est = { Y: !known.Y, K: !known.K };
+}
+function drawChart2() {
+  const svg = $("chart2"), W = 340, H = 120, pad = 4;
+  const ys = frames.map(f => f.cost.Y), ks = frames.map(f => f.cost.K);
+  const top = Math.max(1, ...ys, ...ks);
+  const n = Math.max(1, frames.length - 1);
+  const px = i => pad + (W - 2 * pad) * i / n, py = v => H - pad - (H - 2 * pad) * v / top;
+  const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join("");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML =
+    `<text x="${W - pad}" y="12" text-anchor="end" font-size="10" fill="var(--muted)">최대 ${top}</text>` +
+    `<path d="${path(ys)}" fill="none" stroke="var(--y)" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+    `<path d="${path(ks)}" fill="none" stroke="var(--k)" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+    `<line id="cursor2" y1="0" y2="${H}" stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  svg.onclick = e => {
+    const r = svg.getBoundingClientRect();
+    show(Math.round((e.clientX - r.left) / r.width * n));
+  };
+  svg._px = px;
+}
+
 function drawChart() {
   const svg = $("chart"), W = 340, H = 120, pad = 4;
   const ys = frames.map(f => scoreOf(f.state, "Y")), ks = frames.map(f => scoreOf(f.state, "K"));
@@ -410,10 +498,13 @@ function drawChart() {
     show(Math.round((e.clientX - r.left) / r.width * n));
   };
   svg._px = px;
+  drawChart2();
 }
 function drawCursor() {
   const c = document.getElementById("cursor");
   if (c) { const x = $("chart")._px(cur); c.setAttribute("x1", x); c.setAttribute("x2", x); }
+  const c2 = document.getElementById("cursor2");
+  if (c2 && $("chart2")._px) { const x = $("chart2")._px(cur); c2.setAttribute("x1", x); c2.setAttribute("x2", x); }
 }
 
 function play() {

@@ -23,6 +23,12 @@ def evaluate(pool, params, seeds):
 def suggest(t):
     if os.environ.get("TUNE_SPACE") == "b":
         return suggest_b(t)
+    if os.environ.get("TUNE_SPACE") == "d":
+        d = suggest_b(t)
+        d.update({"home_R": t.suggest_int("home_R", 0, 6), "home_min": t.suggest_int("home_min", 2, 10),
+                  "hosp_gain": t.suggest_int("hosp_gain", 0, 4), "hosp_f": t.suggest_int("hosp_f", 0, 4),
+                  "job_cost": t.suggest_float("job_cost", 0, 0.5)})
+        return d
     if os.environ.get("TUNE_SPACE") == "c":
         d = suggest_b(t)
         d.update({"home_R": t.suggest_int("home_R", 0, 6), "home_min": t.suggest_int("home_min", 2, 10),

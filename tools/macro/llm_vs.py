@@ -1,4 +1,4 @@
-"""저장된 LLM 지휘 명령(out/llm/<경기>/cmd_*.json)을 그대로 재생하며 상대만 바꿔 본다(참고용: 명령은 원래 cv-3 상대 전황에 맞춰 쓴 것).
+"""저장된 LLM 지휘 명령(out/llm/<경기>/cmd_*.json)을 그대로 재생하며 상대만 바꿔 본다(참고용: 명령은 원래 상대 전황에 맞춰 쓴 것).
 사용 (WSL): python3 tools/macro/llm_vs.py --opp dev26 --params '{"recap_f":1}' g1,g2,b150003,...
 """
 from __future__ import annotations
@@ -18,19 +18,21 @@ A = {}
 
 def run(game):
     meta = json.load(open(os.path.join(L.gdir(game), "meta.json"), encoding="utf-8"))
-    llm, op = Agent(L.LLM_VER, {}), Agent(A["opp"], A["params"])
+    lv, _ = L.vers(meta)
+    llm, op = Agent(lv, {}), Agent(A["opp"], A["params"])
     g = Game(meta["seed"], *((llm, op) if meta["side"] == "Y" else (op, llm)))
-    m = L.module(L.LLM_VER)
+    m = L.module(lv)
     cmd = None
     while g.result is None:
         t = g.state.turn
         p = os.path.join(L.gdir(game), f"cmd_{t:03d}.json")
         if t % L.EVERY == 0 and os.path.exists(p):
             cmd = json.load(open(p, encoding="utf-8"))
-            llm.set_params({**L.posture_params(cmd.get("posture", "balanced")),
+            llm.set_params({**L.posture_params(cmd.get("posture", "balanced"), lv),
                             **({"max_f": int(cmd["max_f"])} if cmd.get("max_f") else {})})
         m.CMD = {"focus": cmd.get("focus", []), "defend": cmd.get("defend", [])} if cmd else None
         g.step()
+    m.CMD = None
     r = g.result
     return game, meta["side"], r["winner"], r["reason"], r.get("score"), value(r, meta["side"])
 

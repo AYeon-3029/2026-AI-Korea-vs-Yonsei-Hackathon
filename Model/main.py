@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 cv-14.
+"""깃발 대항전 전략 봇 v22.
 
 v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
@@ -51,6 +51,7 @@ v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 �
 21. v19: v18 + F 위험 탈출(F 사망 진단 tools/macro/fdeath.py: 사망 93% 가 이미 위험한 칸에 갇힌 F) — 목표 위 F 가 위험하면 안전한 옆 칸으로(f_goal_flee 1), 사방 위험이면 (위협−엄호) 최소 칸(f_trap_min). v18 대비 새 시드 101000번대 현실 풀 +0.071±0.007(4800쌍), 공세형 +0.089±0.010(2400쌍), 실제 상태 +0.046±0.010(1328쌍).
 v20 = cv-3 + 탈환 F(recap_f 1, recap_R 1): 잃은 우리 쪽 학관·공학관 근처에 F 가 없으면 상한을 넘겨 가장 가까운 거점에서 F 1명을 뽑는다. 새 시드 2벌 x 현실/공세/흉내 모두 +0.004~+0.016
 v21 = v20 + strike_neutral: 적 W 가 눌러 앉은 중립 상태의 우리 쪽 학관·공학관도 W 공격대 목표. 새 시드 2벌 현실/공세/흉내 +0.005~+0.031
+v22 = cv-14 + spend_all(예비비 뺀 남는 예산 전부 W, 공격적 생산). 새 시드 3벌 현실 +0.004~+0.007 공세 −0.001~+0.009 흉내 +0.004~+0.008
 """
 import json
 import math
@@ -225,7 +226,7 @@ P = {
     "siege_ring_eco": False,       # 내 W 단가가 적보다 비싸면(공학관 열세) 적 거점 포위를 하지 않는다
     "plaza_hold": 0,               # 광장 보유 시 수비 작업을 최우선으로(인원 = 위협 + plaza_hold). 0 = 끔
     "cap_fix": False,              # 상한 초과 판정을 예비비 포함 실제 자원 기준으로(실제 경기: 상대는 상한에 거의 안 머묾)
-    "spend_all": False,            # 예비비 외 남는 예산을 전부 전투병으로
+    "spend_all": True,            # 예비비 외 남는 예산을 전부 전투병으로 v22: False → True
     "spend_all_hard": False,       # 예비비까지 전부 전투병으로(점령비는 이번 턴 수입으로)
     # 전선 집결(사용자 제안): 후반에는 남는 W 를 전선 건물에 모으고, 뒤쪽 건물은 적이 다가올 때만 먼저 증원
     "front_mass_turn": 999,        # 이 턴부터 켠다. 999 = 끔
@@ -312,6 +313,12 @@ P = {
     "recap_all": False,
     "long_T": 0,                   # dev28: 우리가 가졌던 건물을 빼앗긴 지 이 턴 이상이면 "오래 빼앗김"
     "long_f": 0,                   #        오래 빼앗긴 우리 쪽 학관·공학관: 칸 위협과 무관하게 탈환 F 를 이만큼(0 = 끔)
+    "blob": False,                 # dev37 군단 운용: 작업(차단·요격 등) 뒤 남는 W 전부를 한 목표로(경계·분산 공성 대신). 1위 팀 소문 "방어 없이 돌진"
+    "blob_turn": 0,                #        이 턴부터
+    "blob_k": 4.0,                 #        목표 점수 = (가치 + blob_bonus) / (가장 큰 W 무리에서 거리 + blob_k)
+    "blob_bonus": 4.0,
+    "blob_stick": 1.3,             #        직전 목표 유지 배율
+    "blob_neutral": False,         #        적 건물이 없을 때만이 아니라 중립 건물도 후보
     "strike_neutral": True,       #        오래 빼앗긴 중립(적 W 가 눌러 앉음) 우리 쪽 학관·공학관도 W 공격대(eco_strike) 목표에 넣는다 v21: False → True
             #        True 면 학관·공학관만이 아니라 우리 쪽(우리 본진이 더 가까운) 모든 건물
                   #        가장 가까운 F 가 (거점 거리 + recap_R) 보다 멀면 발동
@@ -1555,6 +1562,24 @@ def decide(view, init):
             continue
         done_goals.add(g)
         send_w(g, need, stage, deadline)
+
+    if P["blob"] and view.turn >= P["blob_turn"] and any(c > 0 for c in w_pool.values()):
+        left_w = [(i, c) for i, c in w_pool.items() if c > 0]
+        core = max(left_w, key=lambda t: (t[1], -geo.nkey(t[0])))[0]          # 가장 큰 무리
+        prev = getattr(mem, "blob_goal", None)
+        cands = [i for i, b in bld.items() if b["owner"] == opp or (P["blob_neutral"] and b["owner"] == "N")]
+        if not cands:
+            cands = [i for i, b in bld.items() if b["owner"] != me] or [base_opp]
+
+        def bscore(i):
+            v = (value(bld[i]) + P["blob_bonus"]) if i in bld else P["blob_bonus"]
+            return v / (geo.dist[core][i] + P["blob_k"]) * (P["blob_stick"] if i == prev else 1.0)
+        g = max(cands, key=lambda i: (bscore(i), -geo.nkey(i)))
+        mem.blob_goal = g
+        wmode["siege"] = True
+        wmode["tag"] = "blob"
+        send_w(g, sum(c for _, c in left_w), -1)
+        wmode["siege"] = False
 
     # 굳히기(pressure): 적 W 의 접근을 관측해 공격받을 건물에 주둔을 몰아준다. 공성은 하지 않는다.
     hold = leading and P["lead_w"] == "pressure"

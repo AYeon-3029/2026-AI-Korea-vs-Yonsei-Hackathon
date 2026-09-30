@@ -19,9 +19,9 @@ def main(game):
     meta = json.load(open(os.path.join(L.gdir(game), "meta.json"), encoding="utf-8"))
     cv = "K" if meta["side"] == "Y" else "Y"
     op = meta["side"]
-    llm, o = Agent(L.LLM_VER, {}), Agent(L.OPP_VER, {})
+    llm, o = Agent(meta.get("llm", L.LLM_VER), {}), Agent(meta.get("opp", L.OPP_VER), {})
     g = Game(meta["seed"], *((llm, o) if meta["side"] == "Y" else (o, llm)))
-    m = L.module(L.LLM_VER)
+    m = L.module(meta.get("llm", L.LLM_VER))
     cmd = None
     print(f"##### {game} 시드 {meta['seed']}  cv-3={cv} 본진 {g.state.bases[cv]}  LLM={op} 본진 {g.state.bases[op]}")
     prev_own = {(b.x, b.y): b.owner for b in g.state.buildings.values()}

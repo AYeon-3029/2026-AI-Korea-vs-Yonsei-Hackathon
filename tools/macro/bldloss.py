@@ -136,10 +136,10 @@ def run_llm(game):
     import llm_match as L
     meta = json.load(open(os.path.join(L.gdir(game), "meta.json"), encoding="utf-8"))
     side = "K" if meta["side"] == "Y" else "Y"          # cv-3 쪽
-    llm = Agent(L.LLM_VER, {})
-    op = Agent(L.OPP_VER, {})
+    llm = Agent(meta.get("llm", L.LLM_VER), {})
+    op = Agent(meta.get("opp", L.OPP_VER), {})
     g = Game(meta["seed"], *((llm, op) if meta["side"] == "Y" else (op, llm)))
-    m = L.module(L.LLM_VER)
+    m = L.module(meta.get("llm", L.LLM_VER))
     st = {"cmd": None}
 
     def stepper(g):

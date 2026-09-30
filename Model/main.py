@@ -1,4 +1,4 @@
-"""깃발 대항전 전략 봇 v20.
+"""깃발 대항전 전략 봇 v21.
 
 v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
@@ -50,6 +50,7 @@ v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 �
     v17 대비 새 시드 91000·92000번대 현실 풀 +0.027±0.006·+0.044±0.006(7200쌍씩), 공세형 +0.036±0.010·+0.021±0.009(3600쌍씩).
 21. v19: v18 + F 위험 탈출(F 사망 진단 tools/macro/fdeath.py: 사망 93% 가 이미 위험한 칸에 갇힌 F) — 목표 위 F 가 위험하면 안전한 옆 칸으로(f_goal_flee 1), 사방 위험이면 (위협−엄호) 최소 칸(f_trap_min). v18 대비 새 시드 101000번대 현실 풀 +0.071±0.007(4800쌍), 공세형 +0.089±0.010(2400쌍), 실제 상태 +0.046±0.010(1328쌍).
 v20 = cv-3 + 탈환 F(recap_f 1, recap_R 1): 잃은 우리 쪽 학관·공학관 근처에 F 가 없으면 상한을 넘겨 가장 가까운 거점에서 F 1명을 뽑는다. 새 시드 2벌 x 현실/공세/흉내 모두 +0.004~+0.016
+v21 = v20 + strike_neutral: 적 W 가 눌러 앉은 중립 상태의 우리 쪽 학관·공학관도 W 공격대 목표. 새 시드 2벌 현실/공세/흉내 +0.005~+0.031
 """
 import json
 import math
@@ -304,7 +305,11 @@ P = {
     "final_T": 0,                  # dev26: 남은 턴이 이 이하이면 적 F 가 남은 턴 안에 닿는 우리 건물 W 를 묶고(sticky) 차단 반경을 남은 턴까지 넓힌다
     "final_w": 0.0,                #        그 막판 차단 작업 가치 가산
     "recap_R": 1,  # v20: 3 → 1
-    "recap_all": False,            #        True 면 학관·공학관만이 아니라 우리 쪽(우리 본진이 더 가까운) 모든 건물
+    "recap_all": False,
+    "long_T": 0,                   # dev28: 우리가 가졌던 건물을 빼앗긴 지 이 턴 이상이면 "오래 빼앗김"
+    "long_f": 0,                   #        오래 빼앗긴 우리 쪽 학관·공학관: 칸 위협과 무관하게 탈환 F 를 이만큼(0 = 끔)
+    "strike_neutral": True,       #        오래 빼앗긴 중립(적 W 가 눌러 앉음) 우리 쪽 학관·공학관도 W 공격대(eco_strike) 목표에 넣는다 v21: False → True
+            #        True 면 학관·공학관만이 아니라 우리 쪽(우리 본진이 더 가까운) 모든 건물
                   #        가장 가까운 F 가 (거점 거리 + recap_R) 보다 멀면 발동
     # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
     # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
@@ -516,6 +521,14 @@ def decide(view, init):
         if b["id"] in mem.prev_owner and mem.prev_owner[b["id"]] != b["owner"]:
             mem.last_change = view.turn
         mem.prev_owner[b["id"]] = b["owner"]
+    lost_since = getattr(mem, "lost_since", None)
+    if lost_since is None:
+        lost_since = mem.lost_since = {}
+    for b in view.buildings:
+        if b["owner"] == me:
+            lost_since.pop(b["id"], None)
+        elif b["id"] in mem.cap_turn and b["id"] not in lost_since:
+            lost_since[b["id"]] = view.turn
 
     bld = {geo.idx(b["x"], b["y"]): b for b in view.buildings}
 
@@ -776,18 +789,25 @@ def decide(view, init):
         eff_local_w *= P["cb_risk_scale"]
     des_F = min(cap_f, n_goals)
     recap_goal = None
-    if P["recap_f"]:
+    recap_n = P["recap_f"]
+
+    def long_lost(b):
+        i = bld[b]["id"]
+        return i in lost_since and view.turn - lost_since[i] >= P["long_T"]
+    if P["recap_f"] or P["long_f"]:
         def _rc(b):
             return (geo.dist[base_me][b] < geo.dist[base_opp][b]) if P["recap_all"] else home_eco(b)
         for b in sorted((b for b in bld if _rc(b) and bld[b]["owner"] != me and not enF.get(b, 0)),
                         key=lambda b: (-value(bld[b]), geo.nkey(b))):
             dF = min((geo.dist[i][b] for i in myF), default=INF)
             ds = min(geo.dist[s][b] for s in spawn_me)
-            if dF > ds + P["recap_R"] and threat_w[b] <= sum(c for i, c in myW.items() if geo.dist[i][b] <= 1):
+            lg = P["long_f"] and home_eco(b) and long_lost(b)
+            if dF > ds + P["recap_R"] and (lg or (P["recap_f"] and threat_w[b] <= sum(c for i, c in myW.items() if geo.dist[i][b] <= 1))):
                 recap_goal = b
+                recap_n = max(P["recap_f"], P["long_f"]) if lg else P["recap_f"]
                 break
         if recap_goal is not None:
-            des_F = max(des_F, min(n_goals, n_myF + P["recap_f"]))
+            des_F = max(des_F, min(n_goals, n_myF + recap_n))
     min_F = min(max(P["eg_min_f"] if eg_f else P["min_f"], P["cb_min_f"] if comeback else 0), des_F)
     if P["rush_k"] and view.turn <= P["rush_turn"]:
         min_F = max(1, min_F - int(P["rush_k"] * max(0, sum(enW.values()) - sum(myW.values()))))
@@ -1379,11 +1399,13 @@ def decide(view, init):
         for i, b in bld.items():
             if b["owner"] == me and (P["garrison_types"] == "all" or b["type"] in ("HALL", "ENG")):
                 jobs.append((P["garrison_w"] + value(b), i, P["garrison_n"], INF, -1))
+    def neutral_lost(b):
+        return P["strike_neutral"] and bld[b]["owner"] == "N" and home_eco(b) and long_lost(b)
     home_lost = P["eco_strike_mode"] == "home" and any(
-        bb["owner"] == opp and home_eco(b) for b, bb in bld.items())
+        (bb["owner"] == opp or neutral_lost(b)) and home_eco(b) for b, bb in bld.items())
     if P["eco_strike"] and (eco_short or home_lost) and myW and view.turn >= P["eco_strike_min_turn"]:
         # 경제 열세: 가장 가까운(아군 W 기준) 적 소유 학생회관·공학관 하나에 이길 수 있는 공격대를 모은다(집결 2칸)
-        cands = [b for b in bld if eco_def(b) or (home_lost and bld[b]["owner"] == opp and home_eco(b))]
+        cands = [b for b in bld if eco_def(b) or (home_lost and (bld[b]["owner"] == opp or neutral_lost(b)) and home_eco(b))]
         if cands:
             prev = getattr(mem, "eco_tgt", None)
             if P["eco_strike_stick"] and prev in cands:

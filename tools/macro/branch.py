@@ -194,3 +194,10 @@ for _p in sorted(glob.glob(os.path.join(os.path.dirname(__file__), "../../out/tu
     _nm = "".join(ch for ch in os.path.basename(_p)[:-5].removeprefix("vs") if ch.isalnum())
     OPPS[f"{_pre}{_tag}_{_nm}"] = (_base, json.load(open(_p, encoding="utf-8")))
     MIMIC.setdefault(_pre + _tag, []).append(f"{_pre}{_tag}_{_nm}")
+
+# tAIger(리더보드 1위) 소문 흉내: "별다른 방어 없이 전투병 돌진". cv-14 에서 반응형 방어(요격·경계·차단·엄호)를 끄고 공성·W 여유를 올린다.
+_TIGER = {"react": False, "f_block": 0, "guard_radius": 0, "eco_block_extra": 0, "risk_local_w": 0.0}
+OPPS["t_rush"] = ("cv-14", dict(_TIGER))
+OPPS["t_rush_siege"] = ("cv-14", dict(_TIGER, siege_bld_bonus=30.0, siege_ring_value=6.0, w_margin=34))
+OPPS["t_rush_all"] = ("cv-14", dict(_TIGER, siege_bld_bonus=40.0, siege_ring_value=9.0, w_margin=44, max_f=3, min_f=2))
+TIGER_POOL = ["t_rush", "t_rush_siege", "t_rush_all"]

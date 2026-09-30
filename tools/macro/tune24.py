@@ -23,6 +23,12 @@ def evaluate(pool, params, seeds):
 def suggest(t):
     if os.environ.get("TUNE_SPACE") == "b":
         return suggest_b(t)
+    if os.environ.get("TUNE_SPACE") == "c":
+        d = suggest_b(t)
+        d.update({"home_R": t.suggest_int("home_R", 0, 6), "home_min": t.suggest_int("home_min", 2, 10),
+                  "main_mode": t.suggest_categorical("main_mode", ["attack", "defend", "mixed"]),
+                  "mixed_w": t.suggest_int("mixed_w", 5, 40)})
+        return d
     return {
         "hall_bonus": t.suggest_float("hall_bonus", 0, 10), "eng_bonus": t.suggest_float("eng_bonus", 0, 8),
         "depot_bonus": t.suggest_float("depot_bonus", 0, 8), "plaza_bonus": t.suggest_float("plaza_bonus", 0, 5),
@@ -97,11 +103,11 @@ def main():
             return
         if not st.trials:
             st.enqueue_trial({})
+            if os.environ.get("TUNE_START"):
+                st.enqueue_trial(json.load(open(os.environ["TUNE_START"])))
         for _ in range(a.trials):
             t = st.ask()
-            p = suggest(t) if t.number > 0 or t.params else {}
-            if t.number == 0 and not t.params:
-                p = {}
+            p = {} if t.number == 0 else suggest(t)
             t0 = time.time()
             v = evaluate(pool, p, seeds)
             st.tell(t, v)

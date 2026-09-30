@@ -56,7 +56,7 @@ class MPCAgent:
         self.ver, self.K, self.H, self.start_turn, self.eps, self.stop = ver, K, H, start, eps, stop
         self.modes = list(modes)
         self.inner = Agent(ver)
-        self.shadows = {n: Agent(ver, SHADOWS[n]) for n in shadows}
+        self.shadows = {n: (Agent(ver, SHADOWS[n]) if n in SHADOWS else Agent(*OPPS[n])) for n in shadows}
         self.serr = {n: 0.0 for n in shadows}
         self.decay = decay
         self.shadow = self.shadows[shadows[0]]
@@ -150,7 +150,7 @@ class MPCAgent:
             e = sum(abs(pred.get(k, 0) - real.get(k, 0)) for k in set(pred) | set(real))
             e += abs(ns.resources[opp] - st.resources[opp]) / 5
             self.serr[n] = self.serr[n] * self.decay + e
-        best = min(self.serr, key=lambda n: (self.serr[n], n != "d"))
+        best = min(self.serr, key=lambda n: (self.serr[n], n != "d", n))
         self.shadow = self.shadows[best]
 
     def _rollout(self, st, turn, params):

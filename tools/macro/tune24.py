@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from e24 import one  # noqa: E402
 from branch import parse_range  # noqa: E402
 
-OPPS = ["v2", "v4", "v5", "v7", "v9", "v10", "v14"]
+OPPS = os.environ.get("TUNE_OPPS", "v2,v4,v5,v7,v9,v10,v14").split(",")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 VER = os.environ.get("TUNE_VER", "v24")
 
@@ -21,6 +21,8 @@ def evaluate(pool, params, seeds):
 
 
 def suggest(t):
+    if os.environ.get("TUNE_SPACE") == "b":
+        return suggest_b(t)
     return {
         "hall_bonus": t.suggest_float("hall_bonus", 0, 10), "eng_bonus": t.suggest_float("eng_bonus", 0, 8),
         "depot_bonus": t.suggest_float("depot_bonus", 0, 8), "plaza_bonus": t.suggest_float("plaza_bonus", 0, 5),
@@ -40,6 +42,33 @@ def suggest(t):
         "f_depth": t.suggest_float("f_depth", 0, 1), "escort_extra": t.suggest_int("escort_extra", 0, 3),
         "eco_min": t.suggest_int("eco_min", 0, 4), "picket": t.suggest_categorical("picket", [False, True]),
         "w_safe": t.suggest_categorical("w_safe", [False, True]),
+    }
+
+
+def suggest_b(t):
+    """2차: 1차 최선(#63) 주변을 넓힌 범위 + v24x 새 구조 스위치."""
+    return {
+        "hall_bonus": t.suggest_float("hall_bonus", 0, 8), "eng_bonus": t.suggest_float("eng_bonus", 4, 16),
+        "lib_bonus": t.suggest_float("lib_bonus", 0, 5), "hosp_bonus": t.suggest_float("hosp_bonus", 0, 5),
+        "depot_bonus": t.suggest_float("depot_bonus", 0, 6), "plaza_bonus": t.suggest_float("plaza_bonus", 0, 3),
+        "enemy_mult": t.suggest_float("enemy_mult", 0.7, 1.6),
+        "max_f_early": t.suggest_int("max_f_early", 6, 11), "max_f": t.suggest_int("max_f", 3, 8),
+        "early_turn": t.suggest_int("early_turn", 15, 45),
+        "def_radius": t.suggest_int("def_radius", 1, 3), "def_mult": t.suggest_float("def_mult", 0.5, 3),
+        "def_extra": t.suggest_int("def_extra", 0, 4), "def_fr": t.suggest_int("def_fr", 0, 3),
+        "block_k": t.suggest_int("block_k", 0, 2),
+        "hunt_range": t.suggest_int("hunt_range", 0, 3), "hunt_worth": t.suggest_float("hunt_worth", 2, 12),
+        "main_c": t.suggest_float("main_c", 4, 20), "main_extra": t.suggest_int("main_extra", 0, 4),
+        "main_stick": t.suggest_float("main_stick", 1.5, 6.0), "main_neutral": t.suggest_float("main_neutral", 0.4, 1.5),
+        "main_depth": t.suggest_float("main_depth", 0.3, 3.0), "stage": t.suggest_int("stage", -1, 3),
+        "f_c": t.suggest_float("f_c", 3, 15), "f_stick": t.suggest_float("f_stick", 1.5, 5.0),
+        "f_risk": t.suggest_float("f_risk", 0.5, 3), "f_horizon": t.suggest_int("f_horizon", 1, 5),
+        "f_depth": t.suggest_float("f_depth", 0, 0.8), "escort_extra": t.suggest_int("escort_extra", 0, 4),
+        "eco_min": t.suggest_int("eco_min", 0, 3), "picket": t.suggest_categorical("picket", [False, True]),
+        "retake": t.suggest_categorical("retake", [False, True]), "retake_depth": t.suggest_int("retake_depth", -3, 3),
+        "retake_f": t.suggest_float("retake_f", 0.5, 3), "guard_R": t.suggest_int("guard_R", 0, 8),
+        "guard_mult": t.suggest_float("guard_mult", 0.1, 3), "tele": t.suggest_categorical("tele", [False, True]),
+        "tele_gain": t.suggest_int("tele_gain", 2, 6),
     }
 
 

@@ -1,11 +1,12 @@
 """cv experiments: cached baseline, raw paired rows, uncertainty clustered by map seed.
 
 python3 tools/macro/cv_experiment.py --candidates out/cv/screen.json --seeds 211000-211029 --out out/cv/screen
-Candidate JSON: {name: {ver: "cv-1", params: {...}}}. Baseline is always frozen v19.
+Candidate JSON: {name: {ver: "cv-1", params: {...}}}. Default baseline is frozen v19.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from collections import defaultdict
@@ -48,8 +49,10 @@ def main():
     p.add_argument("--seeds", required=True)
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--out", required=True)
+    p.add_argument("--baseline", default="v19")
     a = p.parse_args()
     candidates = json.loads(Path(a.candidates).read_text())
+    assert a.baseline not in candidates, "Baseline name is reserved"
     opps = list(dict.fromkeys(REAL_POOL + PUSH_POOL))
     seeds = parse_range(a.seeds)
     out = Path(a.out)
@@ -58,11 +61,13 @@ def main():
     report_path = out / "summary.json"
     report = json.loads(report_path.read_text()) if report_path.exists() else {}
     with Pool(a.workers) as pool:
-        for name, spec in {"v19": dict(ver="v19", params={}), **candidates}.items():
+        for name, spec in {a.baseline: dict(ver=a.baseline, params={}), **candidates}.items():
             t0 = time.monotonic()
             path = out / f"{name}.jsonl"
             # Only reuse a complete cache with the exact run definition.
-            meta = dict(seeds=seeds, opps=opps, spec=spec)
+            sources = sorted(Path(f"Model/history/{spec['ver']}").glob("*.py"))
+            hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
+            meta = dict(seeds=seeds, opps=opps, spec=spec, source_sha256=hashes)
             meta_path = out / f"{name}.meta.json"
             rows = []
             if path.exists() and meta_path.exists() and json.loads(meta_path.read_text()) == meta:
@@ -76,7 +81,7 @@ def main():
                         f.write(json.dumps(r) + "\n")
                 meta_path.write_text(json.dumps(meta, indent=2))
             assert not sum(r["errors"] for r in rows), f"{name}: agent exceptions"
-            if name == "v19":
+            if name == a.baseline:
                 base = {(r["seed"], r["opp"], r["side"]): r for r in rows}
             report[name] = {label: summary(rows, base, group) for label, group in
                             (("real", REAL_POOL), ("push", PUSH_POOL), ("all", opps))}

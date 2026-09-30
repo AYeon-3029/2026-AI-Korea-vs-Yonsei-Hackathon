@@ -35,8 +35,11 @@ def brief(g, side, prev_owner):
                 myW[(x, y)] = myW.get((x, y), 0) + n
         if k == "F" and t == op:
             enF.append((x, y))
-    def fmt(b):
-        return f"{SHORT[b.btype]}{b.score}({b.x},{b.y})"
+    bm, bo = s.bases[side], s.bases[op]
+
+    def fmt(b):   # * = 우리 본진이 더 가까운 건물
+        near = abs(b.x - bm[0]) + abs(b.y - bm[1]) < abs(b.x - bo[0]) + abs(b.y - bo[1])
+        return f"{SHORT[b.btype]}{b.score}({b.x},{b.y}){'*' if near else ''}"
     mine = [fmt(b) for b in s.buildings.values() if b.owner == side]
     theirs = [fmt(b) for b in s.buildings.values() if b.owner == op]
     neut = [fmt(b) for b in s.buildings.values() if b.owner == "N"]
@@ -60,12 +63,14 @@ def main():
     ap.add_argument("cmd", choices=["new", "step"])
     ap.add_argument("--prefix", default="b")
     ap.add_argument("--seeds", default="150003-150012")
+    ap.add_argument("--llm", default=L.LLM_VER, help="지휘관 봇 (v20 상대면 dev27 = v20 + 지휘)")
+    ap.add_argument("--opp", default=L.OPP_VER)
     a = ap.parse_args()
     if a.cmd == "new":
         for k, sd in enumerate(parse_range(a.seeds)):
             d = L.gdir(f"{a.prefix}{sd}")
             os.makedirs(d, exist_ok=True)
-            json.dump({"seed": sd, "side": "YK"[k % 2]}, open(os.path.join(d, "meta.json"), "w"))
+            json.dump({"seed": sd, "side": "YK"[k % 2], "llm": a.llm, "opp": a.opp}, open(os.path.join(d, "meta.json"), "w"))
     games = sorted(os.path.basename(p) for p in glob.glob(os.path.join(L.ROOT, "out/llm", f"{a.prefix}[0-9]*")))
     done = 0
     for game in games:

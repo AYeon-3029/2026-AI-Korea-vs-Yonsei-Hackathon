@@ -9,6 +9,7 @@ from branch import MIMIC, OPPS, PUSH_POOL, REAL_POOL, parse_range  # noqa: E402
 
 GROUPS = {
     "strong": ["v22", "cv-3", "v20"],
+    "old": ["v5", "v6", "v7"],
     "real": REAL_POOL,
     "push": PUSH_POOL,
     "mimic": (MIMIC.get("mc16", []) + MIMIC.get("m16", [])),

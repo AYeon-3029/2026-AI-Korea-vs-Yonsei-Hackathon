@@ -56,7 +56,7 @@ def main():
     miss = set(params) - done
     assert not miss, f"P 에 없는 키: {miss}"
     s = "\n".join(lines)
-    s = re.sub(r'^"""깃발 대항전 전략 봇 \w+\.', f'"""깃발 대항전 전략 봇 {a.ver}.', s, count=1)
+    s = re.sub(r'^"""깃발 대항전 전략 봇 [\w-]+\.', f'"""깃발 대항전 전략 봇 {a.ver}.', s, count=1)
     if a.doc:
         doc_end = s.index('"""', 3)
         s = s[:doc_end] + a.doc.rstrip() + "\n" + s[doc_end:]

@@ -1,4 +1,6 @@
-"""깃발 대항전 전략 봇 v19.
+"""깃발 대항전 전략 봇 cv-3.
+
+v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
 전략 요약
 1. 공개된 점수는 대칭 짝까지 함께 기억한다. 미공개 점수는 지역별 기댓값으로 추정한다.
@@ -294,6 +296,7 @@ P = {
     # dev18(F 사망 진단 tools/macro/fdeath.py: 사망의 93% 가 이미 위험한 칸에 갇힌 F, 37% 가 목표 건물 위에서 안전한 옆 칸을 두고 버티다 죽음)
     "f_goal_flee": 1,              # 목표 위 F 가 위험하면 안전한 옆 칸으로 비킨다. 1 = 전체 위협(생산 가능분 포함), 2 = 실제 적 W 만 v19: 0 → 1
     "f_trap_min": True,           # 사방이 위험하면 목표 쪽 전진 대신 (위협 − 엄호)가 가장 작은 칸(제자리 포함) v19: False → True
+    "cv_safe_equal": True,       # cv-3: W 동수 상쇄 후 적 W가 없으면 F 생존
     # 대기 중인 적 무리 타격(사용자: 참새튀김기전 23~24턴 공학관에 멈춘 병력이 바로 옆 안암역 싸움에 나서지 않음):
     # 지난 턴에도 거의 같은 수로 있던 적 W 무리(≥ strike_min)가 우리 건물 2칸 안이면, 이번 턴 닿는 아군으로 (그 칸 위협 + strike_w) 명이 되면 친다. 0 = 끔
     "strike_w": 2,  # v17: 0 → 2
@@ -1641,7 +1644,7 @@ def decide(view, init):
     def safe(v):
         if P["f_contest_wait"] and enF.get(v, 0) and cover[v] <= threat[v]:
             return False           # 적 F 가 있는 칸에 엄호 없이 들어가면 경합으로 양쪽 모두 점령 불가
-        return threat[v] == 0 or cover[v] > threat[v]
+        return threat[v] == 0 or cover[v] > threat[v] or (P["cv_safe_equal"] and cover[v] == threat[v])
 
     f_plan = {}           # 이번 턴 F 도착 칸 → 목표(다음 턴 이동 중 엄호용)
     f_units = []          # 명령을 기다리는 깃발병 1명 단위(칸)

@@ -20,8 +20,28 @@ sys.path.insert(0, os.path.dirname(__file__))
 from sim import Agent, Game, value  # noqa: E402
 from branch import OPPS, parse_range  # noqa: E402
 from engine.pipeline import team_score  # noqa: E402
+import engine.pipeline as pipeline  # noqa: E402
 
 OPPS["v14"] = ("v14", {})
+
+INCOME, WASTE = Counter(), Counter()
+_add_resource, _step_income = pipeline.add_resource, pipeline.step_income
+
+
+def tracked_resource(state, team, amount):
+    before = state.resources[team]
+    _add_resource(state, team, amount)
+    WASTE[team] += amount - (state.resources[team] - before)
+
+
+def tracked_income(state):
+    for team in ("Y", "K"):
+        halls = sum(b.owner == team and b.btype == "HALL" for b in state.buildings.values())
+        INCOME[team] += state.config["resource"]["base_income"] + halls * state.config["resource"]["hall_bonus"]
+    _step_income(state)
+
+
+pipeline.add_resource, pipeline.step_income = tracked_resource, tracked_income
 
 
 def run(args):
@@ -30,27 +50,17 @@ def run(args):
     o = Agent(*OPPS[opp])
     g = Game(seed, *((me, o) if side == "Y" else (o, me)))
     op = "K" if side == "Y" else "Y"
-    inc = {side: 0, op: 0}
+    INCOME.clear()
+    WASTE.clear()
     eco = {side: 0, op: 0}
-    waste = {side: 0, op: 0}
     lost = Counter()
     prev_own = {}
-    prev_units = None
-    spawned = {side: Counter(), op: Counter()}
     d100 = None
     while g.result is None:
-        before = {t: dict(g.state.resources) for t in (0,)}[0]
-        units_before = Counter()
-        for (x, y, t, k), c in g.state.units.items():
-            units_before[(t, k)] += c
         g.step()
         s = g.state
-        halls = {t: sum(1 for b in s.buildings.values() if b.owner == t and b.btype == "HALL") for t in (side, op)}
         for t in (side, op):
-            inc[t] += 10 + 2 * halls[t]
             eco[t] += sum(1 for b in s.buildings.values() if b.owner == t and b.btype in ("HALL", "ENG"))
-            if before[t] + 10 + 2 * halls[t] > 40:
-                waste[t] += before[t] + 10 + 2 * halls[t] - 40
         for b in s.buildings.values():
             if prev_own.get(b.id) == side and b.owner != side:
                 lost[b.btype] += 1
@@ -62,9 +72,9 @@ def run(args):
     for (x, y, t, k), c in g.state.units.items():
         units[(t, k)] += c
     return {"opp": opp, "v": value(g.result, side), "reason": g.result.get("reason"), "turns": n,
-            "inc_diff": inc[side] - inc[op], "eco_me": eco[side] / n, "eco_op": eco[op] / n,
-            "waste_me": waste[side], "waste_op": waste[op], "d100": d100, "lost": dict(lost),
-            "w_end_diff": units[(side, "W")] - units[(op, "W")]}
+            "inc_diff": INCOME[side] - INCOME[op], "eco_me": eco[side] / n, "eco_op": eco[op] / n,
+            "waste_me": WASTE[side], "waste_op": WASTE[op], "d100": d100, "lost": dict(lost),
+            "w_end_diff": units[(side, "W")] - units[(op, "W")], "errors": me.errors + o.errors}
 
 
 def main():
@@ -74,11 +84,17 @@ def main():
     p.add_argument("--seeds", default="42000-42039")
     p.add_argument("--opps", default="v14,v13,srv12_press,srv12_eco,srv12_egf,b72,x_press,x_eco,x_center,x_turtle")
     p.add_argument("--workers", type=int, default=24)
+    p.add_argument("--out", default="")
     a = p.parse_args()
     params = json.loads(a.params)
     jobs = [(s, o, side, a.ver, params) for s in parse_range(a.seeds) for o in a.opps.split(",") for side in "YK"]
     with Pool(a.workers) as pool:
         rows = pool.map(run, jobs, chunksize=2)
+    assert not sum(r["errors"] for r in rows), "agent exceptions"
+    if a.out:
+        with open(a.out, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
     print(f"{len(rows)}경기  승점률 {np.mean([r['v'] for r in rows]):.3f}")
     for o in a.opps.split(","):
         rs = [r for r in rows if r["opp"] == o]

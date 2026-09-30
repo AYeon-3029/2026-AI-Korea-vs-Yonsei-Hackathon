@@ -135,9 +135,10 @@ def job(args):
     out, ecos = [], []
     for ver, params in zip(vers, (pa, pb)):
         g, eco = play_track(s, me, Agent(ver, params), Agent(*OPPS[proxy]))
+        assert not sum(agent.errors for agent in g.agents.values()), (path, t, proxy, ver)
         out.append(value(g.result, me))
         ecos.append(eco)
-    return os.path.basename(path), t, proxy, out, ecos
+    return path, t, proxy, out, ecos
 
 
 def main():
@@ -152,6 +153,7 @@ def main():
     p.add_argument("--a", default="{}")
     p.add_argument("--b", default="{}")
     p.add_argument("--workers", type=int, default=24)
+    p.add_argument("--out", default="")
     a = p.parse_args()
     files = [f for d in a.games.split(",") for f in sorted(glob.glob(os.path.join(d, "*.json")))]
     if a.files:
@@ -166,9 +168,20 @@ def main():
         for r in pool.imap_unordered(job, jobs):
             if r:
                 rows.append(r)
+    if a.out:
+        with open(a.out, "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False)
+    assert rows, "No replay states matched"
     V = np.array([x[3] for x in rows])
     d = V[:, 1] - V[:, 0]
-    print(f"{len(rows)}쌍  A {V[:, 0].mean():.3f}  B {V[:, 1].mean():.3f}  차 {d.mean():+.4f} ± {d.std() / np.sqrt(len(d)):.4f}"
+    by_replay = {}
+    for path, _, _, vs, _ in rows:
+        by_replay.setdefault(path, []).append(vs[1] - vs[0])
+    # Repeated turns/proxies from one replay are correlated; cluster the SE by replay.
+    residual = np.array([sum(v - d.mean() for v in ds) for ds in by_replay.values()])
+    n_replays = len(residual)
+    se = np.sqrt(n_replays / (n_replays - 1) * np.sum(residual ** 2)) / len(rows) if n_replays > 1 else float("nan")
+    print(f"{len(rows)}쌍  A {V[:, 0].mean():.3f}  B {V[:, 1].mean():.3f}  차 {d.mean():+.4f} ± {se:.4f} (SE: {n_replays} replays)"
           f"  (다름 {np.mean(d != 0):.2f})  {time.time() - t0:.0f}s")
     E = lambda k, j: np.mean([x[4][j][k] for x in rows])
     print(f"  분기 후 30턴 우리 공학관 보유 A {E('ENG', 0):.1f} B {E('ENG', 1):.1f} · 학생회관 A {E('HALL', 0):.1f} B {E('HALL', 1):.1f} (건물-턴)")

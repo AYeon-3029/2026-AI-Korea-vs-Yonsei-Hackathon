@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -183,3 +184,13 @@ OPPS["p_lodge"] = ("dev11", dict(_PUSH, raid_w=2.0, raid_D=12, hold_new=8, hold_
 OPPS["p_rush"] = ("dev11", dict(_PUSH, guard_radius=4, siege_ring_value=9.0, w_margin=44, risk_local_w=0.0, max_f=4, min_f=3))
 OPPS["p_center"] = ("dev11", dict(_PUSH, center_expect=3.5, plaza_bonus=3.0))
 PUSH_POOL = ["p_press", "p_raid", "p_lodge", "p_rush", "p_center"]
+# 실전 상대 흉내 봇(tools/macro/mimic.py fit): out/tune/mimic/<회차>/<상대>.json → OPPS["m16_<상대>"] (이름은 글자·숫자만)
+MIMIC = {}
+for _p in sorted(glob.glob(os.path.join(os.path.dirname(__file__), "../../out/tune/mimic/*/*.json"))):
+    _dir = os.path.basename(os.path.dirname(_p))
+    _base = _dir.split("-", 1)[1] if "-" in _dir else "dev11"
+    _tag = _dir.lstrip("V").split("_")[0]
+    _pre = "m" if _base == "dev11" else "mc"
+    _nm = "".join(ch for ch in os.path.basename(_p)[:-5].removeprefix("vs") if ch.isalnum())
+    OPPS[f"{_pre}{_tag}_{_nm}"] = (_base, json.load(open(_p, encoding="utf-8")))
+    MIMIC.setdefault(_pre + _tag, []).append(f"{_pre}{_tag}_{_nm}")

@@ -1,11 +1,16 @@
 __pycache__/
 *.pyc
-out/tune/
-# 강화학습·신경망 산출물(데이터 조각·맵 캐시·체크포인트, 수 GB) — 로컬 전용
-out/rl/
-out/nn/
-out/sub/
-out/macro/*.jsonl
-out/macro/*.log
-# 로컬 대전 리플레이(수백 MB) — 새 리플레이는 로컬에만 둔다(이미 커밋된 파일은 유지)
-out/replays/
+
+# 실험 산출물·로컬 전용 자료 (대회 종료 후 저장소에서 제외)
+out/
+Model/history/
+Model/sparring/
+Model/league/
+Model/search.py
+Real Match Replay/
+HANDOFF.md
+PLAN-frontier.md
+
+# 제출 ZIP은 최종본만 저장소에 둔다
+submissions/*.zip
+!submissions/submission-Junghoon-v36.zip

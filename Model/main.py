@@ -1,4 +1,44 @@
-"""깃발 대항전 전략 봇 v22.
+"""깃발 대항전 전략 봇 v36 = v35 + 갇힌 F 구조(f_rescue 1: 사방이 적 1턴 위협인 F 의 탈출 칸 중 우리 W 가 가장 쉽게 닿는 칸에 위협+1 명).
+호위 진단: 엄호 없는 위험 이동은 전부 갇힘 탈출. 대 v35 0.537(1차), 흉내 9팀 −0.004.
+
+기반: v35 = v34 + 동수 방어 F(fguard 3: 우리 건물에 적 F 1칸 안·W 동수면 우리 F 를 올려 경합) + F 목표 거리 보정 4.0(가까운 목표 비중↑, 팀원 cv-71 분산 전개).
+대 v34 0.520/0.547/0.560, 흉내 9팀 +0.037/+0.063/+0.007, tAIger 실제 상태 +0.026, RS22 +0.002, RSold +0.014.
+
+기반: v34 = v33 + 공학관 직전 W 보류(eng_wait 2): 공학관이 없고 우리 F 가 중립 공학관 2칸 안이면(15턴까지)
+자원 상한으로 버려질 분 외에는 W 를 사지 않고 공학관 점령 뒤 2원에 일괄 생산(팀원 tAIger 분석). 대 v33 0.600/0.623/0.590, 흉내 9팀 −0.004/+0.007/+0.041.
+
+기반: v33 = v32 + F 위험 모델(갇힘 탈출): 실제 리더보드 83경기 우리 F 결정으로 학습한 로지스틱(1칸 안 적 W 칸 수가 핵심)으로
+갇힌 F 의 탈출 칸을 고른다. 실제 상태 2턴 F 사망 4.86→4.30%(V22)·4.28→3.88%(V29 홀드아웃), 대 v32 0.570/0.597/0.580.
+
+기반: v32 = v31 + W 넓게 깔기(w_spread anti: 같은 거리 다음 칸 중 아군 W 가 적은 칸 우선). 사용자 관찰(tAIger·AIKU 는 W 를 넓게 깔아 빈칸을 없앤다).
+
+기반: v31 = v29 + 기습 목표를 수비가 얇은 곳 순으로(raid_soft_a 1: 거리 + 목표 2칸 안 적 W). 상위 팀 약점(자기 진영 상실의 38~60% 가 수비 ≤1) 공략.
+
+기반: v29 = v28 + cv_align 2. cv-52: v27 + 계획된 W 지원에 맞춘 F 목표 배정.
+
+기반 설명: 깃발 대항전 전략 봇 v27 = v26 + 보급소 기습(AIKU형) + F 2턴 안전 여유 8(공격 중 F 손실 감소). 저돌형 메타 대응.
+
+리더보드 V22 회차: 진 경기 우리 F 사망 125 중 ≈85% 가 이미 갇힌 F → 길 칸은 2턴 안 적 W 가 우리보다 8 넘게 많으면 들어가지 않는다.
+AIKU 는 보급소를 W 13~22 로 반복 기습 → 기습 대상에 보급소 포함.
+검증(v26 대비): 실제 상태 V22·V21 +0.016 · V12~16 −0.012 · 현실 −0.011 · 공세 +0.006 · 흉내 −0.006 · v26 직접 대결 0.533(300).
+
+v26 설명:
+깃발 대항전 전략 봇 v26 = v25 + tAIger형 공격 습관: 상시 경제 기습 + 맞교환 반격.
+
+리더보드 상위 팀 전략 지문(tools/lb_profile.py): F 를 W 와 붙여 다니고 상대 진영 학관·공학관·보급소를 경기 내내 반복 기습한다
+(tAIger 20·38·44·51턴 W 10~13). 우리 v22 는 경기당 0~1회. 사용자 교훈: 빼앗긴 경제 손실은 회복되지 않으니 적 경제도 같은 턴만큼 깎아야 한다.
+- 상시 경제 기습: 15턴부터 끝까지, 우리 W 20명 이상이면 가장 가까운 적 학관·공학관에 (주변 적 W + 6) 공격대(eco_raid_*).
+- 맞교환 반격: 우리 학관·공학관을 잃은 턴부터 10턴 동안 적 진영 학관·공학관을 공격대로(swap_*).
+- 검증(v25 대비): 현실 +0.025 ± 0.012 · 공세 0 · 흉내 +0.001 · v25 직접 대결 0.527(300) · 실제 상태 V22·V21 −0.020 · V12~16 +0.004.
+
+v25 설명:
+깃발 대항전 전략 봇 v25 = v22 + 상시 F 호위(fesc_always, 최소 2명).
+
+리더보드 V22 회차 분석: 상위 팀 F 호위율 81~100% vs 우리 50~80%. 이동 중 F 의 다음 칸에 적이 없어도 W 2명을 붙인다.
+새 시드 현실 +0.003 · 공세 −0.011 · 흉내 +0.013 · 이번 회차 흉내 +0.008 · 실제 초반 상태 +0.016 · v22 직접 대결 0.533(300경기).
+(dev39 의 다른 실험 스위치는 모두 꺼짐, 막판 수세 적용 위치만 decide 안으로 옮김 — eg_def_turn 999 라 동작 같음)
+
+이전 설명(v22):
 
 v19 + W 동수 상쇄 시 F가 생존하는 전투 규칙을 안전 판정에 반영.
 
@@ -120,6 +160,9 @@ P = {
     "local_w_radius": 6,           # 내 건물·유닛에서 이 거리 안의 적 W 를 센다
     "local_w_floor": 0.5,          # 그래도 적 W 총수의 이 비율만큼은 유지
     "sym_tiebreak": True,          # 남는 동률을 진영 대칭으로 깨기(미러전 = 무승부)
+    # dev51 사용자 관찰(tAIger·AIKU 전): 상대는 W 를 넓게 깔아 빈칸을 없앤다(진 경기 2칸 통제 58% vs 우리 37%, 칸당 W 3.0 vs 4.4).
+    # w_spread: off(뭉치기, v31) | anti(아군 적은 칸 우선) | cap(이동 칸 아군이 w_cap 이상이면 뒤로)
+    "w_spread": "anti", "w_cap": 4,
     "smart_step": "w",             # 동거리 후보 선택 기준 적용 대상 off|f|w|both (F 는 역효과)
     "siege": True,                 # 남는 W 로 적 건물·생산 거점을 공격 (False 면 순수 수비)
     "f_center_pull": True,         # F 동거리 후보에서 중앙에 가까운 칸을 선호
@@ -137,6 +180,12 @@ P = {
     "block_spawn": False,          # 적 생산 거점이 k 칸 안이면 적이 이번 턴 뽑을 수 있는 W 도 센다(생산이 이동보다 먼저)
     "block_tele": False,           # 적 역이 k−1 칸 안이면 다른 적 역의 W(TELE 1회분, 최대 5)도 센다
     "block_extra": 0,              # 필요 인원 여유
+    # dev42 tAIger전(V22 회차) 진단: 적 F 가 학관 옆에서 호위 W 13명이 모이기를 3턴 기다렸다 들어왔는데, 필요 인원은 F 거리 k 안의
+    # 적 W 만 세어 1명이었다. 학관·공학관이면 block_wR 칸 안 적 W(곧 F 와 합류할 호위)도 센다. 0 = 끔
+    "block_wR": 4,
+    # dev42 같은 목표 칸에 작업이 여럿이면 가치가 큰 작업 하나만 실행되어 필요 인원이 작은 쪽(예측 1명)이 차단 작업(15명)을 지웠다.
+    # 켜면 같은 목표의 작업들 중 가장 큰 필요 인원을 쓴다.
+    "job_maxneed": True,
     "block_strict": False,         # 기한 안 인원으로 필요 인원을 못 채우면 보내지 않는다(동수 상쇄면 적 F 가 살아남는다)
     # 방어 범위 경로(사용자 관찰 seed 3608: 본진 병력이 방송국만 보고 돌아 나가는데, 광장 쪽으로 나가면 비슷한 거리로
     # 광장·방송국을 함께 지원 범위에 둔다). 칸의 방어 가치 = cov_R 칸 안 '적이 근처에 있는 내 건물' 가치 합.
@@ -295,13 +344,51 @@ P = {
     "eco_strike_mode": "home",    # short = 종류별 수 열세 | home = 열세 또는 우리 진영 학생회관·공학관을 적이 가짐 | sum = 둘의 합계 열세 v18: "short" → "home"
     "eco_strike_stick": False,     # 목표가 유효한 동안(적 소유) 같은 목표를 유지한다
     "eco_strike_min_turn": 0,      # 이 턴부터만 공격대를 보낸다
+    "cv_align": 0, "cv_align_gain": 2.0,  # existing-W/F target alignment
+    "eco_raid_t0": 15, "eco_raid_t1": 160,   # dev39 선제 경제 기습 구간(t1 = 0 이면 끔)
+    "eco_raid_n": 6, "eco_raid_minw": 20,
+    # dev48 상위 8팀 대비 적진 중립화 31~80턴 5.3 vs 2.5, 81~160턴 4.5 vs 1.7: 기습 목표 수(eco_raid_k)·적진 건물만(eco_raid_side "enemy")
+    "eco_raid_k": 1, "eco_raid_side": "any",
+    # dev49 상위 팀 약점 공략: 기습 목표를 '약한 곳' 순으로(거리 + raid_soft_a × 2칸 적W + raid_far_b × (적 주력 근접)). 0 = 가장 가까운 곳(v29)
+    "raid_soft_a": 1.0, "raid_far_b": 0.0,
+    # F 사냥: 호위(1칸 적 W) hunt_esc 명 이하인 적 F 가 우리 W 에서 hunt_R 칸 안이면 그 칸으로 호위+1 명. 0 = 끔
+    "hunt_R": 0, "hunt_esc": 1, "hunt_worth": 6.0,
+    "eco_raid_always": True, "eco_raid_types": "eco+depot", "eco_raid_fw": 0.0,   # dev40 상위 팀 모방 봇용
+    "eg_center_turn": 0,           # dev39 막판 중앙 집결 시작 턴(0 = 끔)
+    "f_safe2": True, "f_safe2_margin": 8,   # dev40 F 2턴 안전 여유(길 칸)
+    "swap_turns": 10, "swap_n": 5, "swap_worth": 0.0,   # dev40 맞교환 반격(0 = 끔)
+    "ledger_thr": 0, "ledger_eng": 4.0,   # dev40 경제 장부 문턱(자원 단위, 0 = 끔)·공학관 1턴 가치
+    "eco_alert_R": 0, "eco_alert_min": 5, "eco_alert_worth": 6.0,   # dev39 경제 건물 조기 경보(0 = 끔)
     # 이동 중 F 엄호(상위 팀 관찰: F 사망 경기당 상위 3.8 · 우리 9.4, F 옆 W 동행 0.69 · 0.58): 지난 턴 목표로 가는 F 의 다음 칸 v 가
     # fesc_R 칸 안 적 W 에 노출되면 v 에 (1턴 위협 + fesc_n) 명을 이번 턴 도착으로 보내 F 가 같은 턴에 들어가게 한다. 0 = 끔
     "fesc_n": 1,  # v18: 0 → 1
     "fesc_R": 2,
     "fesc_worth": 3.0,
+    "fesc_always": True,           # dev39 상위 팀 모방(F 호위율 81~100% vs 우리 50~80%): 적 W 가 없어도 F 다음 칸에 항상 W 를 붙인다
+    "fesc_min": 2,                 #        그때 최소 인원
+    "f_need_w": False,             # dev39: F 는 이번 턴 아군 W 가 함께 도착하는 칸으로만 이동(f_need_turn 이후)
+    "f_need_turn": 0,
     # dev18(F 사망 진단 tools/macro/fdeath.py: 사망의 93% 가 이미 위험한 칸에 갇힌 F, 37% 가 목표 건물 위에서 안전한 옆 칸을 두고 버티다 죽음)
     "f_goal_flee": 1,              # 목표 위 F 가 위험하면 안전한 옆 칸으로 비킨다. 1 = 전체 위협(생산 가능분 포함), 2 = 실제 적 W 만 v19: 0 → 1
+    # 끝내기: F 가 이미 서 있는 비소유 건물(중립 = 이번 턴 점령 / 적 = 이번 턴 중립화)의 가치 배수. 0 = 끔
+    "finish_mult": 0.0, "finish_enemy": 0,
+    # 재집결: 이미 위험한 칸의 F 가 목표 쪽 다음 칸(2칸 안 적W − 우리W 압력)이 f_regroup 를 넘으면 전진 대신 압력이 가장 낮은 안전한 옆 칸으로. −1 = 끔
+    "f_regroup": -1, "f_regroup_base": 1,
+    # 출구 규칙: 엄호(cover) 없는 F 는 '자기 칸+이웃 중 적 W 1칸 위협이 없는 칸' 이 f_exit_min 개 미만인 칸을 위험으로 본다. 0 = 끔
+    # 근거(실제 리플레이 83경기): 단독 F 가 출구 1개 칸에 들어가면 2턴 안 사망 16.8~20.7%, 출구 3개+ 0.1~0.5%, 동행 시 ≤2.2%
+    "f_exit_min": 0, "f_exit_road": 0,
+    # F 위험 모델(실제 리더보드 83경기 우리 F 결정으로 학습한 로지스틱, out/macro/frisk_fit.py): 칸 v 로 가면 다음 상태에 적 W 가 있을 확률.
+    # f_trap_model: 갇힘 탈출을 이 위험 최소 칸으로(검증 생존 41.5→47.0%, 53.6→59.1%). f_risk_max: 0 보다 크면 예측 위험이 이를 넘는 칸을 위험으로.
+    "f_trap_model": True, "f_risk_max": 0.0,
+    # 동수 방어 F(팀원 tAIger 분석): 우리 건물에 적 F 가 1칸 안이고 이동 후 우리 W 가 적 1턴 위협 W 와 같으면(상쇄 후 양쪽 F 만 남음)
+    # 우리 F 를 그 칸에 두거나 1칸 옆에서 들여 경합(점령·중립화 불가)으로 만든다. 0 = 끔, 1 = 학관·공학관, 2 = + 보급소·광장, 3 = 모든 건물
+    "fguard": 0, "fguard_slack": 0,
+    # 갇힌 F 구조(호위 진단: 엄호 없는 위험 이동은 전부 갇힘 탈출 — W 배정이 F 결정보다 먼저라 탈출 칸에 W 가 없다).
+    # F 칸과 이웃이 모두 적 1턴 위협 칸이면, (1칸 안 아군 W − 위협)이 가장 큰 탈출 칸에 위협+1 명을 기한 1 로 보낸다. 0 = 끔
+    "f_rescue": 0, "f_rescue_worth": 8.0,
+    # 공학관 직전 W 보류(팀원 tAIger 분석: 공학관 점령 다음 턴 W 11 명 일괄 생산): 공학관이 없고 우리 F 가 중립 공학관 eng_wait 칸 안이면
+    # (eng_wait_turn 턴까지) 자원 상한으로 버려질 분 말고는 W 를 사지 않는다 — 다음 턴부터 W 단가 3 → 2. 0 = 끔
+    "eng_wait": 2, "eng_wait_turn": 15,
     "f_trap_min": True,           # 사방이 위험하면 목표 쪽 전진 대신 (위협 − 엄호)가 가장 작은 칸(제자리 포함) v19: False → True
     "cv_safe_equal": True,       # cv-3: W 동수 상쇄 후 적 W가 없으면 F 생존
     "sticky_R": 0,                 # dev26: 적 F 가 이 거리 안인 우리 건물 위 W 는 다른 작업에 빼앗기지 않게 먼저 묶는다(0 = 끔)
@@ -349,6 +436,10 @@ P = {
 P.update({'cv_job_cost': 0.021724022405676, 'cv_cost_scope': 2, 'dist_offset': 7.31129590395668, 'block_worth': 2.745990966387539})
 
 # 로컬 실험용: BOT_PARAMS='{"min_f": 0}' 처럼 파라미터를 덮어쓴다(제출 환경에서는 미설정)
+# cv-52: fixed settings passed independent confirmation.
+P.update({'cv_align': 2, 'cv_align_gain': 2})  # v29: 지원 없는 적 목표 F 감점(cv-52 의 일부)
+P.update({'fguard': 3, 'dist_offset': 4.0})  # v35: 동수 방어 F(모든 건물) + F 목표 거리 보정 7.31 → 4.0
+P.update({'f_rescue': 1})  # v36: 갇힌 F 의 탈출 칸에 W(위협 + 1)를 기한 1 로 보낸다
 if os.environ.get("BOT_PARAMS"):
     P.update(json.loads(os.environ["BOT_PARAMS"]))
 
@@ -496,6 +587,8 @@ class Memory:
         return min(P["station_cap"], g * P["station_scale"])
 
 
+RAID_TYPES = {"eco": ("HALL", "ENG"), "eco+depot": ("HALL", "ENG", "DEPOT"), "depot": ("DEPOT",),
+              "all": ("HALL", "ENG", "DEPOT", "LIBRARY", "STATION", "WATCH", "HOSPITAL", "PLAZA")}   # dev48 상위 팀: 30턴 뒤 적진 건물을 종류 없이 끊는다
 GEO = None
 MEM = None
 DBG_TURNS = set()
@@ -504,6 +597,9 @@ DBG = []   # 진단용(tools/macro/rerun.py --dump): W 작업 배정 기록. 대
 # 진단 계측(PLAN-frontier 단계 0): BOT_STATS=<폴더> 이면 매 턴 누적 지표를 <폴더>/<pid>.json 에 덮어쓴다.
 # 제출 환경에서는 설정되지 않으므로 아무 일도 하지 않는다.
 STATS_DIR = os.environ.get("BOT_STATS", "")
+FRISK_W = [-1.885, -0.0037, -0.0012, 1.3366, 0.0186, -0.6529, -0.523, 0.1297, 0.2624, 0.0343, 0.4573, -0.1838]
+FRISK_MU = [0.4119, 1.855, 0.6312, 5.4409, 1.1173, 4.346, 0.1262, 0.2198, 10.2326, 0.7378, 0.1557]
+FRISK_SD = [1.5978, 4.3287, 0.8015, 7.9233, 3.7704, 8.3984, 0.3321, 0.4141, 3.9663, 5.3724, 0.3625]
 FDBG = None                # 진단용: list 를 넣으면 F 판단 사유 (턴, 출발, 도착, 사유, 출발 안전, 도착 안전)
 STATS = {"f_lost": 0, "gained": 0, "lost": 0, "exp_f": 0, "owned": set(), "pts140": None}
 
@@ -511,6 +607,19 @@ STATS = {"f_lost": 0, "gained": 0, "lost": 0, "exp_f": 0, "owned": set(), "pts14
 # ------------------------------------------------------------------ 의사결정
 
 def decide(view, init):
+    """dev39: 막판 수세(eg_def)를 decide 안에서 적용한다(시뮬레이터는 safe_decide 를 거치지 않아 v22 까지는 실험에 반영되지 않았다)."""
+    saved = None
+    if view.turn > P["eg_def_turn"]:
+        saved = {k: P[k] for k in P["eg_def"]}
+        P.update(P["eg_def"])
+    try:
+        return _decide(view, init)
+    finally:
+        if saved:
+            P.update(saved)
+
+
+def _decide(view, init):
     global GEO, MEM
     if GEO is None:
         GEO = Geo(init)
@@ -631,6 +740,27 @@ def decide(view, init):
         return bld[b]["type"] in ("HALL", "ENG") and geo.dist[base_me][b] < geo.dist[base_opp][b]
     eco_short = {t for t in ("HALL", "ENG") if len(owned(me, t)) < len(owned(opp, t))} if (
         P["eco_def_w"] or P["eco_def_risk"] or P["eco_strike"]) else set()
+    # dev40 경제 장부(사용자: 학관·공학관을 빼앗겨 잃은 몫은 되찾아도 회복되지 않는다 — 균형을 맞추려면 적의 학관·공학관도 같은 턴만큼 잃게 해야 한다).
+    # 리더보드 V22 회차: 이긴 경기는 모두 학관 턴 차 +36 ~ +132, 진 경기는 W 격차가 갈리는 시점에 −2 ~ −10.
+    # 장부(자원 단위) = Σ 2 × (학관 수 차) + Σ eng_val × (공학관 보유 차) ± 15(보급소 첫 점령). 장부가 −ledger_thr 이하면
+    # 지금 수가 같아도 경제 열세로 보고 적 학관·공학관을 친다(가치 가중·경제 공격대).
+    if P["ledger_thr"]:
+        led = getattr(mem, "ledger", 0.0)
+        if getattr(mem, "ledger_turn", -1) != view.turn:
+            led += 2 * (len(owned(me, "HALL")) - len(owned(opp, "HALL")))
+            led += P["ledger_eng"] * ((1 if owned(me, "ENG") else 0) - (1 if owned(opp, "ENG") else 0))
+            seen = getattr(mem, "opp_depot", None)
+            if seen is None:
+                seen = mem.opp_depot = set()
+            for i, b in bld.items():
+                if b["type"] == "DEPOT" and b["owner"] == opp and b["id"] not in seen:
+                    seen.add(b["id"]); led -= 15
+            if len(mem.depot_got) > getattr(mem, "ledger_dep", 0):
+                led += 15 * (len(mem.depot_got) - getattr(mem, "ledger_dep", 0))
+                mem.ledger_dep = len(mem.depot_got)
+            mem.ledger, mem.ledger_turn = led, view.turn
+        if led <= -P["ledger_thr"]:
+            eco_short = eco_short | {"HALL", "ENG"}
     if P["eco_strike"] and P["eco_strike_mode"] == "sum":
         n_me = len(owned(me, "HALL")) + len(owned(me, "ENG"))
         n_op = len(owned(opp, "HALL")) + len(owned(opp, "ENG"))
@@ -920,6 +1050,15 @@ def decide(view, init):
         emit_spawn("F", 1, recap_source, myF)
         nF -= 1
     emit_spawn("F", nF, best_spawn(targets_all), myF)
+    if (P["eng_wait"] and view.turn <= P["eng_wait_turn"] and not owned(me, "ENG") and nW
+            and not any(geo.dist[e][base_me] <= 3 for e in enW)
+            and any(b["type"] == "ENG" and b["owner"] == "N" and any(geo.dist[f][i] <= P["eng_wait"] for f in myF)
+                    for i, b in bld.items())):
+        left_res = view.my_resource - nF * F_COST - nS * S_COST
+        keep = 0
+        while left_res - keep * my_w_cost + income > cap and left_res - keep * my_w_cost >= my_w_cost:
+            keep += 1
+        nW = min(nW, keep)
     w_goals = {"enf": list(enF), "myf": list(myF), "mix": list(enF) + list(myF)}[P["w_spawn"]]
     emit_spawn("W", nW, best_spawn(w_goals or list(enF) or [base_opp]), myW)
     emit_spawn("S", nS, best_spawn(unknown), myS)
@@ -1034,6 +1173,10 @@ def decide(view, init):
 
     def prefer_w(v):
         """W 동거리 후보: 아군 W 가 모이는 칸. 전투는 수가 전부이므로 뭉쳐 다닌다."""
+        if P["w_spread"] == "anti":
+            return (cover[v], geo.nkey(v))
+        if P["w_spread"] == "cap":
+            return (cover[v] >= P["w_cap"], -cover[v], geo.nkey(v))
         return (-cover[v], geo.nkey(v))
 
     def f_own_risky(v, goal):
@@ -1404,6 +1547,8 @@ def decide(view, init):
                 need = math.ceil(shared[b] - 1e-9) + 1 + P["block_extra"]
             else:
                 need = sum(c for j, c in enW.items() if geo.dist[j][b] <= k) + 1 + P["block_extra"]
+            if P["block_wR"] and eco:
+                need = max(need, sum(c for j, c in enW.items() if geo.dist[j][b] <= max(k, P["block_wR"])) + 1 + P["block_extra"])
             if P["block_spawn"] and any(geo.dist[s][b] <= k for s in spawn_opp):
                 need += view.opp_resource // w_cost(opp)
             if P["block_tele"] and tele_pool:
@@ -1436,6 +1581,46 @@ def decide(view, init):
         return P["strike_neutral"] and bld[b]["owner"] == "N" and home_eco(b) and long_lost(b)
     home_lost = P["eco_strike_mode"] == "home" and any(
         (bb["owner"] == opp or neutral_lost(b)) and home_eco(b) for b, bb in bld.items())
+    if P["swap_turns"]:
+        # dev40 맞교환 반격(사용자 교훈: 빼앗긴 경제 손실은 회복되지 않으니 적 경제도 같은 턴만큼 잃게 해야 한다):
+        # 우리 학관·공학관을 잃은 턴부터 swap_turns 동안, 적 진영 학관·공학관 중 가장 가까운 곳을 공격대로 친다(적 주력은 우리 쪽에 와 있다).
+        prev_own = getattr(mem, "swap_prev", {})
+        for b, bb in bld.items():
+            if bb["type"] in ("HALL", "ENG") and prev_own.get(b) == me and bb["owner"] != me:
+                mem.swap_until = view.turn + P["swap_turns"]
+        mem.swap_prev = {b: bb["owner"] for b, bb in bld.items()}
+        if view.turn <= getattr(mem, "swap_until", -1) and myW:
+            sc = [b for b, bb in bld.items() if bb["owner"] == opp and bb["type"] in ("HALL", "ENG")
+                  and geo.dist[base_opp][b] <= geo.dist[base_me][b]]
+            if sc:
+                g = min(sc, key=lambda b: (min(geo.dist[w][b] for w in myW), geo.nkey(b)))
+                en = sum(c for j, c in enW.items() if geo.dist[j][g] <= P["eco_strike_R"])
+                jobs.append((value(bld[g]) + P["eco_strike_worth"] + P["swap_worth"], g, max(threat[g], en) + P["swap_n"], INF,
+                             P["eco_strike_stage"]))
+    raid = (P["eco_raid_t1"] and P["eco_raid_t0"] <= view.turn <= P["eco_raid_t1"]
+            and (P["eco_raid_always"] or not (eco_short or home_lost))
+            and myW and sum(myW.values()) >= P["eco_raid_minw"])
+    if raid:
+        # dev39 상위 팀 모방: 경제가 동률이어도 15~25턴에 적 학생회관·공학관 하나를 공격대로 선제 기습
+        # dev40 상위 팀 모방 봇: eco_raid_always 면 경기 내내, 대상 종류는 eco_raid_types
+        rc = [b for b, bb in bld.items() if bb["owner"] == opp and bb["type"] in RAID_TYPES[P["eco_raid_types"]]
+              and (P["eco_raid_side"] != "enemy" or geo.dist[base_opp][b] < geo.dist[base_me][b])]
+        if enW:
+            _tot = sum(enW.values())
+            _mass = lambda b: sum(c * geo.dist[j][b] for j, c in enW.items()) / _tot      # 적 W 평균 거리(클수록 주력에서 멀다)
+        else:
+            _mass = lambda b: 0.0
+        def _rkey(b):
+            k = min(geo.dist[w][b] for w in myW)
+            if P["raid_soft_a"]:
+                k += P["raid_soft_a"] * sum(c for j, c in enW.items() if geo.dist[j][b] <= 2)
+            if P["raid_far_b"]:
+                k -= P["raid_far_b"] * _mass(b)
+            return (k, geo.nkey(b))
+        for g in sorted(rc, key=_rkey)[:max(1, P["eco_raid_k"])]:
+            en = sum(c for j, c in enW.items() if geo.dist[j][g] <= P["eco_strike_R"])
+            jobs.append((value(bld[g]) + P["eco_strike_worth"], g, max(threat[g], en) + P["eco_raid_n"], INF,
+                         P["eco_strike_stage"]))
     if P["eco_strike"] and (eco_short or home_lost) and myW and view.turn >= P["eco_strike_min_turn"]:
         # 경제 열세: 가장 가까운(아군 W 기준) 적 소유 학생회관·공학관 하나에 이길 수 있는 공격대를 모은다(집결 2칸)
         cands = [b for b in bld if eco_def(b) or (home_lost and (bld[b]["owner"] == opp or neutral_lost(b)) and home_eco(b))]
@@ -1460,6 +1645,33 @@ def decide(view, init):
                 continue
             worth = P["strike_worth"] + max(value(bld[b]) for b in near_b) + (1.0 if enF.get(e, 0) else 0.0)
             jobs.append((worth, e, threat[e] + P["strike_w"], P["strike_dl"], -1))
+    if P["eco_alert_R"]:
+        # dev39 경제 건물 조기 경보(리더보드 V22 회차 tAIger 전 17턴: 적 W 14 + F 가 측면으로 우리 학관 2~3칸 앞, 우리 주력 33 은 광장 대치,
+        # 학관 위 1명 → 19턴 상실). 적 W 가 eco_alert_R 칸 안에 eco_alert_min 이상이고 지난 턴보다 가까워졌으면 (그 수 + 1) 명을 미리 보낸다.
+        for b, bb in bld.items():
+            if bb["owner"] != me or bb["type"] not in ("HALL", "ENG"):
+                continue
+            en_now = sum(c for j, c in enW.items() if geo.dist[j][b] <= P["eco_alert_R"])
+            if en_now < P["eco_alert_min"]:
+                continue
+            en_prev = sum(c for j, c in mem.prev_enW.items() if geo.dist[j][b] <= P["eco_alert_R"])
+            d_now = sum(geo.dist[j][b] * c for j, c in enW.items() if geo.dist[j][b] <= P["eco_alert_R"]) / en_now
+            d_prev = (sum(geo.dist[j][b] * c for j, c in mem.prev_enW.items() if geo.dist[j][b] <= P["eco_alert_R"]) / en_prev
+                      if en_prev else P["eco_alert_R"] + 1)
+            if d_now >= d_prev and en_now <= en_prev:
+                continue
+            jobs.append((value(bb) + P["eco_alert_worth"], b, en_now + 1, INF, -1))
+    if P["f_rescue"] and P["react"]:
+        for c in myF:
+            if c in bld and bld[c]["owner"] == me:
+                continue
+            opts = [c] + [v for _, v in geo.nbrs[c]]
+            if any(threat_w[v] == 0 for v in opts):
+                continue
+            v = max(opts, key=lambda v: (sum(n for i, n in myW.items() if geo.dist[i][v] <= 1) - threat_w[v], -threat_w[v], geo.nkey(v)))
+            if sum(n for i, n in myW.items() if geo.dist[i][v] <= 1) <= threat_w[v]:
+                continue                     # 이번 턴 이길 만큼 닿지 못한다
+            jobs.append((P["f_rescue_worth"] * myF[c], v, threat_w[v] + 1, 1, -1))
     if P["fesc_n"] and P["react"]:
         for c in myF:
             t = getattr(mem, "f_plan", {}).get(c)
@@ -1470,8 +1682,10 @@ def decide(view, init):
                 continue
             v = st[1]
             if not any(geo.dist[j][v] <= P["fesc_R"] for j in enW):
+                if P["fesc_always"]:
+                    jobs.append((value(bld[t]) + P["fesc_worth"], v, max(threat[v] + P["fesc_n"], P["fesc_min"] * min(myF[c], 2)), 1, -1))
                 continue
-            jobs.append((value(bld[t]) + P["fesc_worth"], v, threat[v] + P["fesc_n"], 1, -1))
+            jobs.append((value(bld[t]) + P["fesc_worth"], v, max(threat[v] + P["fesc_n"], P["fesc_min"] if P["fesc_always"] else 0), 1, -1))
     if P["cv_intercept"]:
         # Predicted approach to our building occupied by enemy W. Prediction is
         # a hypothesis, not a guaranteed opponent move; only locally feasible raids.
@@ -1538,6 +1752,17 @@ def decide(view, init):
                     and deadline <= 2
                     and sum(n for u,n in w_pool.items() if geo.dist[u][t] <= deadline) >= need)
         return (-int(critical), -worth / (1 + coefficient * cost), geo.nkey(t))
+    if P["hunt_R"] and P["react"] and myW:
+        for e, c in enF.items():
+            esc = sum(n for j, n in enW.items() if geo.dist[e][j] <= 1)
+            if esc > P["hunt_esc"] or min(geo.dist[w][e] for w in myW) > P["hunt_R"]:
+                continue
+            jobs.append((P["hunt_worth"] + 2.0 * c, e, esc + 1, INF, -1))
+    if P["job_maxneed"]:
+        mx = {}
+        for _, t, nd, _, _ in jobs:
+            mx[t] = max(mx.get(t, 0), nd)
+        jobs = [(w, t, mx[t], dl, st) for w, t, _, dl, st in jobs]
     jobs.sort(key=job_key)
 
     sR = max(P["sticky_R"], left if P["final_T"] and left <= P["final_T"] else 0)
@@ -1789,6 +2014,19 @@ def decide(view, init):
                 send_w(spot, P["feint_n"], -1)
         else:
             mem.feint = None
+    # 막판 중앙 집결은 공성보다 먼저(공성이 남는 W 를 다 써서 뒤에서는 실행되지 않았다)
+    if P["eg_center_turn"] and view.turn >= P["eg_center_turn"]:
+        # dev39 막판 중앙 집결(리더보드 V22 회차 점수형 패배 5판: 상대가 157~160턴에 광장·방송국·보급소를 가져감, 그때 상대 W 중앙 77~81% vs 우리 12~39%)
+        # 남는 W 를 160턴 안에 닿는 중앙 건물로(점수 ÷ (거리 + 2), 적 소유는 × 2)
+        cen = [b for b in bld if mem.central[bld[b]["id"]]]
+        for i in sorted(w_pool, key=geo.nkey):
+            if w_pool[i] <= 0:
+                continue
+            cand = [b for b in cen if geo.dist[i][b] <= left - 1]
+            if not cand:
+                continue
+            g = max(cand, key=lambda b: (score_of(bld[b]) * (2 if bld[b]["owner"] == opp else 1) / (geo.dist[i][b] + 2), -geo.nkey(b)))
+            send_w(g, w_pool[i], -1)
     wmode["tag"] = "siege"
     for _, g in siege:
         if not any(c > 0 for c in w_pool.values()):
@@ -1831,9 +2069,28 @@ def decide(view, init):
                 send_w(g, w_pool[i], -1)
 
     # 7. 깃발병 배치
+    def frisk(v, u):
+        """F 가 u 에서 v 로 가면(제자리 포함) 다음 상태 v 에 적 W 가 있을 예측 확률."""
+        ev = enW.get(v, 0); e1 = threat_w[v]
+        k1 = sum(1 for i in enW if geo.dist[i][v] <= 1)
+        f = [ev, e1, k1, w_within(v, 2, False), cover[v], w_within(v, 1, True), v in bld, v == u, geo.dist[base_opp][v], e1 - cover[v], ev > 0]
+        z = FRISK_W[0] + sum(wk * (x - m) / s for wk, x, m, s in zip(FRISK_W[1:], f, FRISK_MU, FRISK_SD))
+        return 1 / (1 + math.exp(-z))
+
     def safe(v):
         if P["f_contest_wait"] and enF.get(v, 0) and cover[v] <= threat[v]:
             return False           # 적 F 가 있는 칸에 엄호 없이 들어가면 경합으로 양쪽 모두 점령 불가
+        if P["f_need_w"] and view.turn >= P["f_need_turn"] and cover[v] < 1 and not (v in bld and bld[v]["owner"] == me):
+            return False           # dev39: 호위 W 없이는 움직이지 않는다(우리 건물 칸 제외)
+        if (P["f_safe2"] and v not in bld
+                and w_within(v, 2, False) > w_within(v, 2, True) + P["f_safe2_margin"]):
+            return False           # dev40 2턴 안전 여유: 리더보드 V22 회차 F 사망 125 중 ≈85% 가 이미 갇힌 F(출발 칸부터 적 W 우세) — 갇힐 길 칸에 들어가지 않는다
+        if (P["f_exit_min"] and cover[v] == 0 and not (P["f_exit_road"] and v in bld)
+                and not (v in bld and bld[v]["owner"] == me)
+                and sum(1 for c in [v] + [x for _, x in geo.nbrs[v]] if threat_w[c] == 0) < P["f_exit_min"]):
+            return False
+        if P["f_risk_max"] and not (v in bld and bld[v]["owner"] == me) and frisk(v, None) > P["f_risk_max"]:
+            return False
         return threat[v] == 0 or cover[v] > threat[v] or (P["cv_safe_equal"] and cover[v] == threat[v])
 
     f_plan = {}           # 이번 턴 F 도착 칸 → 목표(다음 턴 이동 중 엄호용)
@@ -1869,6 +2126,8 @@ def decide(view, init):
         if P["early_eco_w"] and view.turn <= P["early_eco_turn"] and bld[i]["type"] in ("HALL", "ENG"):
             # 초반 경제 건물 선점: 승패가 15~40턴에 갈리고 패배의 93% 가 수입 열세(tools/macro/diagnose.py)
             v *= 1.0 + P["early_eco_w"]
+        if P["eco_raid_fw"] and bld[i]["owner"] == opp and bld[i]["type"] in RAID_TYPES[P["eco_raid_types"]]:
+            v *= 1.0 + P["eco_raid_fw"]    # dev40 모방 봇: 기습 대상 종류의 적 건물을 F 도 우선
         if finishing and bld[i]["owner"] == opp:
             v *= P["finish_mult"]
         if enF.get(i, 0) and cover[i] <= threat[i]:
@@ -1898,6 +2157,25 @@ def decide(view, init):
         for t in targets:
             race_eta[t] = min((geo.dist[x][t] for x in srcs), default=INF)
     free_units = sorted(f_units, key=geo.nkey)
+    if P["fguard"] and not endgame:
+        gtypes = {1: ("HALL", "ENG"), 2: ("HALL", "ENG", "DEPOT", "PLAZA")}.get(P["fguard"])
+        for b in sorted(bld, key=geo.nkey):
+            if bld[b]["owner"] != me or (gtypes and bld[b]["type"] not in gtypes):
+                continue
+            if not any(geo.dist[e][b] <= 1 for e in enF) or threat_w[b] == 0:
+                continue
+            if not (threat_w[b] - P["fguard_slack"] <= cover[b] <= threat_w[b]):
+                continue
+            if b in free_units:
+                free_units.remove(b); fdbg(b, b, 'fguard')
+                final_F[b] = final_F.get(b, 0) + 1
+                continue
+            near = [u for u in free_units if geo.dist[u][b] == 1]
+            if near:
+                u = near[0]; free_units.remove(u)
+                d = next(dd for dd, v in geo.nbrs[u] if v == b)
+                add_move(u, "F", 1, d); fdbg(u, b, 'fguard')
+                final_F[b] = final_F.get(b, 0) + 1
     tr_left = 3  # 고정 계산 상한: 후보 3개 × (진입/1턴 대기/계속 대기) × 대응 3개 × 최대 5턴
     tr_cache = {}
 
@@ -1958,6 +2236,14 @@ def decide(view, init):
                 f_plan[dest] = recap_goal
             fdbg(recap_source, dest, 'recap')
             final_F[dest] = final_F.get(dest, 0) + n
+    # After all W commands, estimate actual next-cell support, not idle W stock.
+    align_support = {}
+    if P["cv_align"] and not endgame:
+        for t in targets:
+            if bld[t]["owner"] == opp and bld[t]["type"] in ("HALL", "ENG", "DEPOT"):
+                ours = sum(n for w,n in enumerate(cover) if n > 0 and geo.dist[w][t] <= 2)
+                enemy = sum(n for w,n in enW.items() if geo.dist[w][t] <= 2)
+                align_support[t] = ours >= max(4, enemy + 2)
     arrival_cache = {}
     def arrival_mult(t, d):
         # ponytail: bounded arrival-force estimate; ignores future enemy production
@@ -2002,6 +2288,16 @@ def decide(view, init):
                     s *= hold_mult(t, d)
                 if P["cv_arrival"] and not endgame:
                     s *= arrival_mult(t, d)
+                if P["cv_align"] and not endgame and bld[t]["owner"] == opp:
+                    if P["cv_align"] in (1, 3) and align_support.get(t) and d <= 6:
+                        s *= P["cv_align_gain"]
+                    if P["cv_align"] in (2, 3):
+                        # Downweight unsupported penetration, but retain escape and safe movement.
+                        fronts = [w for w,n in enumerate(cover) if n >= 3 and geo.dist[w][t] <= 4]
+                        if not fronts:
+                            s *= 0.5
+                if P["finish_mult"] and d == 0 and (bld[t]["owner"] == "N" or (P["finish_enemy"] and bld[t]["owner"] == opp)):
+                    s *= P["finish_mult"]
                 s /= d + P["dist_offset"]
                 key = (-s, geo.nkey(u), geo.nkey(t))
                 if P["tactical_rollout"]:
@@ -2039,14 +2335,29 @@ def decide(view, init):
                     final_F[side[0][1]] = final_F.get(side[0][1], 0) + 1
                     continue
             if P["f_trap_min"] and u != t and not any(safe(v) for _, v in geo.nbrs[u]):
-                cand = [(threat[u] - cover[u], 1, geo.dist[u][t], geo.nkey(u), None, u)]
-                cand += [(threat[v] - cover[v], 0, geo.dist[v][t], geo.nkey(v), d, v) for d, v in geo.nbrs[u]]
+                if P["f_trap_model"]:
+                    cand = [(frisk(u, u), 1, geo.dist[u][t], geo.nkey(u), None, u)]
+                    cand += [(frisk(v, u), 0, geo.dist[v][t], geo.nkey(v), d, v) for d, v in geo.nbrs[u]]
+                else:
+                    cand = [(threat[u] - cover[u], 1, geo.dist[u][t], geo.nkey(u), None, u)]
+                    cand += [(threat[v] - cover[v], 0, geo.dist[v][t], geo.nkey(v), d, v) for d, v in geo.nbrs[u]]
                 _, _, _, _, d, v = min(cand)
                 if d is not None:
                     add_move(u, "F", 1, d)
                 fdbg(u, v, 'trap')
                 final_F[v] = final_F.get(v, 0) + 1
                 continue
+        if P["f_regroup"] >= 0 and not wait and u != t and not safe(u):
+            press = lambda v: w_within(v, 2, False) - w_within(v, 2, True)
+            fwd = [press(v) for _, v in geo.nbrs[u] if safe(v) and geo.dist[v][t] < geo.dist[u][t]]
+            if not fwd or min(fwd) > P["f_regroup"]:
+                side = sorted((press(v), geo.dist[base_me][v] if P["f_regroup_base"] else 0, geo.nkey(v), d, v)
+                              for d, v in geo.nbrs[u] if safe(v))
+                if side and (not fwd or side[0][0] < min(fwd)):
+                    add_move(u, "F", 1, side[0][3])
+                    fdbg(u, side[0][4], 'regroup')
+                    final_F[side[0][4]] = final_F.get(side[0][4], 0) + 1
+                    continue
         for dest, n in ([(u, 1)] if wait else advance(u, "F", 1, t, safe)):
             if dest != t:
                 f_plan[dest] = t
@@ -2167,10 +2478,6 @@ _errors = 0
 def safe_decide(view, init):
     """예외가 나도 END는 출력되도록(몰수패 방지) 빈 명령으로 대체한다."""
     global _errors
-    saved = None
-    if view.turn > P["eg_def_turn"]:
-        saved = {k: P[k] for k in P["eg_def"]}
-        P.update(P["eg_def"])
     try:
         return decide(view, init)
     except Exception:
@@ -2178,9 +2485,6 @@ def safe_decide(view, init):
         if _errors <= 5:
             traceback.print_exc(file=sys.stderr)
         return []
-    finally:
-        if saved:
-            P.update(saved)
 
 
 if __name__ == "__main__":

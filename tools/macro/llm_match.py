@@ -156,7 +156,7 @@ def export(game):
     op = Agent(ov, {})
     g = Game(seed, *((me, op) if side == "Y" else (op, me)))
     gmap = generate(seed, CFG)
-    base = {"dev24": "cv-3", "dev27": "v20"}.get(lv, lv)
+    base = {"dev24": "cv-3", "dev27": "v20", "dev34": "cv-14", "dev41": "v27"}.get(lv, lv)
     teams = {side: {"name": f"LLM 지휘관 ({lv} = {base} + 지휘)", "command": "tools/macro/llm_match.py"},
              ("K" if side == "Y" else "Y"): {"name": ov, "command": f"Model/history/{ov}/main.py"}}
     rp = new_replay(seed, CFG, gmap, teams)

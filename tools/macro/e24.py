@@ -14,6 +14,7 @@ GROUPS = {
     "real": REAL_POOL,
     "push": PUSH_POOL,
     "mimic": (MIMIC.get("mc16", []) + MIMIC.get("m16", [])),
+    "mc22": MIMIC.get("mc22", []),
     "weak": ["v9", "v10", "v14"],
 }
 

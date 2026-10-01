@@ -210,3 +210,22 @@ for _n in MIMIC.get("mc22", []):
     _b, _p = OPPS[_n]
     OPPS["eg" + _n[2:]] = (_b, dict(_p, **_EG_PUSH))
     EG22.append("eg" + _n[2:])
+
+# 상위 팀 모방 봇(리더보드 전략 지문 tools/lb_profile.py: F 고정·상시 호위·저주둔·경제 반복 기습). 바탕 dev40.
+_TP = {"fesc_always": True, "fesc_min": 2, "eco_raid_t0": 15, "eco_raid_t1": 160, "eco_raid_always": True,
+       "eco_raid_minw": 10, "eco_raid_fw": 1.0}
+OPPS["tp_tiger"] = ("dev40", dict(_TP, max_f_early=3, early_turn=30, max_f=6, min_f=3, guard_radius=4, f_block=1,
+                                  eco_block_extra=0, eco_raid_n=10))
+OPPS["tp_yagu"] = ("dev40", dict(_TP, max_f_early=4, max_f=4, min_f=4, eco_raid_n=6))
+OPPS["tp_aiku"] = ("dev40", dict(_TP, max_f_early=6, max_f=6, min_f=6, eco_raid_types="depot", eco_raid_n=12))
+OPPS["tp_red"] = ("dev40", dict(_TP, max_f_early=3, max_f=3, min_f=3, guard_radius=4, f_block=0, eco_block_extra=0,
+                                eco_raid_n=8, siege_spread=3))
+TOP_POOL = ["tp_tiger", "tp_yagu", "tp_aiku", "tp_red"]
+# tAIger형 2차: 수비는 v25 그대로(tAIger 도 W 60~70% 를 자기 건물 3칸 안에 둔다), 공격 습관만(상시 기습·F 3→6·호위)
+_TG = dict(_TP, max_f_early=3, early_turn=30, max_f=6, min_f=3)
+OPPS["tg_a"] = ("dev40", dict(_TG, eco_raid_n=10))
+OPPS["tg_b"] = ("dev40", dict(_TG, eco_raid_n=6))
+OPPS["tg_c"] = ("dev40", dict(_TG, eco_raid_n=10, eco_raid_types="eco+depot"))
+OPPS["tg_d"] = ("dev40", dict(_TG, eco_raid_n=10, max_f_early=4, max_f=4, min_f=4))
+OPPS["tg_e"] = ("dev40", dict(_TG, eco_raid_n=10, eco_raid_fw=0.0))
+OPPS["tg_f"] = ("dev40", dict(_TP, eco_raid_n=10))       # F 는 v25 그대로, 기습·호위만

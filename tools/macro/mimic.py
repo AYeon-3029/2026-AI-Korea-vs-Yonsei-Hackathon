@@ -40,9 +40,12 @@ def feat_from_units(units, owners, btype, me, op, base_me, base_op):
     W = {me: 0, op: 0}
     F = {me: 0, op: 0}
     fwd = 0
+    cells = set()
     for tm, k, x, y, n in units:
         if k == "W":
             W[tm] = W.get(tm, 0) + n
+            if tm == op:
+                cells.add((x, y))
             if tm == op and man((x, y), base_me) < man((x, y), base_op):
                 fwd += n
         elif k == "F":
@@ -55,7 +58,7 @@ def feat_from_units(units, owners, btype, me, op, base_me, base_op):
             if btype[i] in ("HALL", "ENG"):
                 eco[o] += 1
     return {"Wm": W[me], "Wo": W[op], "Fo": F[op], "Bm": nb[me], "Bo": nb[op], "Em": eco[me], "Eo": eco[op],
-            "fwd": fwd / max(1, W[op])}
+            "fwd": fwd / max(1, W[op]), "Co": len(cells)}
 
 
 def real_traj(path):
@@ -118,6 +121,20 @@ def sim_traj(path, ours, opp_params, ours_params=None):
 
 
 SCALE = {"Wm": 20.0, "Wo": 20.0, "Fo": 2.0, "Bm": 3.0, "Bo": 3.0, "Em": 1.0, "Eo": 1.0, "fwd": 0.15}
+SPACE = None      # --space v32: 최신 바탕(v32)용 확장 탐색(넓게 깔기·막판 F·초반 F·기습 규모·F 2턴 안전), 상대 W 칸 수(Co)도 맞춘다
+
+
+def space_v32(trial):
+    f, i, c = trial.suggest_float, trial.suggest_int, trial.suggest_categorical
+    p = space(trial)
+    p.update({
+        "w_spread": c("w_spread", ["off", "anti"]), "max_f_early": i("max_f_early", 2, 8), "early_turn": i("early_turn", 0, 40),
+        "fesc_min": i("fesc_min", 0, 3), "eco_raid_n": i("eco_raid_n", 2, 14), "eco_raid_t0": i("eco_raid_t0", 10, 40),
+        "eco_raid_types": c("eco_raid_types", ["eco", "eco+depot", "depot", "all"]), "raid_soft_a": c("raid_soft_a", [0.0, 1.0]),
+        "f_safe2_margin": i("f_safe2_margin", 2, 12),
+        "lib_bonus": f("lib_bonus", 1.0, 8.0),
+    })
+    return p
 
 
 def distance(real, sim, rres, sres, rlast, slast):
@@ -129,8 +146,9 @@ def distance(real, sim, rres, sres, rlast, slast):
             d += 3.0
             n += 1
             continue
-        for k, sc in SCALE.items():
-            d += ((rf[k] - sf[k]) / sc) ** 2 / len(SCALE)
+        keys = dict(SCALE, Co=6.0) if SPACE == "v32" else SCALE
+        for k, sc in keys.items():
+            d += ((rf[k] - sf[k]) / sc) ** 2 / len(keys)
         n += 1
     d = d / max(1, n)
     d += 2.0 * abs(rres - sres)
@@ -146,7 +164,7 @@ def fit_one(args):
     study.enqueue_trial({})
 
     def obj(trial):
-        params = space(trial)
+        params = space_v32(trial) if SPACE == "v32" else space(trial)
         sim, sres, slast, err = sim_traj(path, ours, params)
         if err:
             return 99.0
@@ -160,7 +178,7 @@ def fit_one(args):
 
 
 def fmt(f):
-    return f"W {f['Wm']:3d}:{f['Wo']:3d} 건물 {f['Bm']:2d}:{f['Bo']:2d} 경제 {f['Em']}:{f['Eo']} 적F {f['Fo']} 전진 {f['fwd']:.2f}"
+    return f"W {f['Wm']:3d}:{f['Wo']:3d} 건물 {f['Bm']:2d}:{f['Bo']:2d} 경제 {f['Em']}:{f['Eo']} 적F {f['Fo']} 전진 {f['fwd']:.2f} 적W칸 {f.get('Co', '-')}"
 
 
 def main():
@@ -173,9 +191,11 @@ def main():
     ap.add_argument("--files", default="")
     ap.add_argument("--vers", default="v16,v19,cv-3")
     ap.add_argument("--attacker", default="dev11", help="흉내 봇 바탕 코드(dev11 = v14 계열, cv-3 = 최신)")
+    ap.add_argument("--space", default="", help="v32 = 확장 탐색 + 상대 W 칸 수 맞춤")
     a = ap.parse_args()
-    global ATTACKER
+    global ATTACKER, SPACE
     ATTACKER = a.attacker
+    SPACE = a.space
     files = [f for d in a.games.split(",") for f in sorted(glob.glob(os.path.join(d, "*.json")))]
     if a.files:
         files = [f for f in files if any(x in f for x in a.files.split(","))]

@@ -3,7 +3,7 @@
 WSL에서 /mnt/c 파일은 실행 권한(rwxrwxrwx)으로 보이고, 그대로 압축하면 서버가
 EXECUTABLE_FILE 로 거부한다. 모든 항목을 일반 파일 권한(0644)으로 기록한다.
 
-사용: python3 tools/make_zip.py v4 [작성자]   → submissions/submission-Junghoon-v4.zip
+사용: python3 tools/make_zip.py v4 [작성자] [원본 폴더]   → submissions/submission-Junghoon-v4.zip (원본 기본 Model/)
 """
 import stat
 import sys
@@ -21,6 +21,7 @@ FILES = ["submission.json", "main.py", "campus_bot.py", "protocol.py", "_generat
 def main():
     version = sys.argv[1] if len(sys.argv) > 1 else "latest"
     author = sys.argv[2] if len(sys.argv) > 2 else AUTHOR
+    src = ROOT / (sys.argv[3] if len(sys.argv) > 3 else "Model")
     out = ROOT / "submissions" / f"submission-{author}-{version}.zip"
     out.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -28,7 +29,7 @@ def main():
             info = zipfile.ZipInfo(name, date_time=(2026, 9, 27, 0, 0, 0))
             info.external_attr = (stat.S_IFREG | 0o644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
-            z.writestr(info, (ROOT / "Model" / name).read_bytes())
+            z.writestr(info, (src / name).read_bytes())
 
     result = inspect_zip(out)
     bad = []

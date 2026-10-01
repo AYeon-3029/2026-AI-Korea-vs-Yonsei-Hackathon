@@ -23,6 +23,16 @@ def evaluate(pool, params, seeds):
 def suggest(t):
     if os.environ.get("TUNE_SPACE") == "b":
         return suggest_b(t)
+    if os.environ.get("TUNE_SPACE") == "g":
+        # v27 새 설정만 좁게(상시 기습·맞교환·F 2턴 안전·호위·경제 공격대)
+        return {
+            "eco_raid_t0": t.suggest_int("eco_raid_t0", 10, 30), "eco_raid_n": t.suggest_int("eco_raid_n", 3, 10),
+            "eco_raid_minw": t.suggest_int("eco_raid_minw", 10, 40),
+            "eco_raid_types": t.suggest_categorical("eco_raid_types", ["eco", "eco+depot", "depot"]),
+            "swap_turns": t.suggest_int("swap_turns", 0, 20), "swap_n": t.suggest_int("swap_n", 3, 10),
+            "f_safe2": t.suggest_categorical("f_safe2", [False, True]), "f_safe2_margin": t.suggest_int("f_safe2_margin", 3, 12),
+            "fesc_min": t.suggest_int("fesc_min", 1, 3), "eco_strike": t.suggest_int("eco_strike", 3, 8),
+        }
     if os.environ.get("TUNE_SPACE") == "f":
         d = suggest_b(t)
         d.pop("tele", None)

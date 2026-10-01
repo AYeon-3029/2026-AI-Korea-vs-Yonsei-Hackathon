@@ -132,6 +132,7 @@ def space_v32(trial):
         "fesc_min": i("fesc_min", 0, 3), "eco_raid_n": i("eco_raid_n", 2, 14), "eco_raid_t0": i("eco_raid_t0", 10, 40),
         "eco_raid_types": c("eco_raid_types", ["eco", "eco+depot", "depot", "all"]), "raid_soft_a": c("raid_soft_a", [0.0, 1.0]),
         "f_safe2_margin": i("f_safe2_margin", 2, 12),
+        "hunt_R": i("hunt_R", 0, 6), "hunt_esc": i("hunt_esc", 0, 3), "hunt_worth": f("hunt_worth", 2.0, 20.0),
         "lib_bonus": f("lib_bonus", 1.0, 8.0),
     })
     return p

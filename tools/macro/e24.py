@@ -15,6 +15,7 @@ GROUPS = {
     "push": PUSH_POOL,
     "mimic": (MIMIC.get("mc16", []) + MIMIC.get("m16", [])),
     "mc22": MIMIC.get("mc22", []),
+    "eg22": [o for o in OPPS if o.startswith("eg22_")],
     "weak": ["v9", "v10", "v14"],
 }
 

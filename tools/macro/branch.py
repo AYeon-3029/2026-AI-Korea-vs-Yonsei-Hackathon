@@ -201,3 +201,12 @@ OPPS["t_rush"] = ("cv-14", dict(_TIGER))
 OPPS["t_rush_siege"] = ("cv-14", dict(_TIGER, siege_bld_bonus=30.0, siege_ring_value=6.0, w_margin=34))
 OPPS["t_rush_all"] = ("cv-14", dict(_TIGER, siege_bld_bonus=40.0, siege_ring_value=9.0, w_margin=44, max_f=3, min_f=2))
 TIGER_POOL = ["t_rush", "t_rush_siege", "t_rush_all"]
+
+# 리더보드 V22 회차 B형 패배(160턴 스냅샷 직전 중앙 총공세) 재현: 이번 회차 흉내 봇(mc22)에 막판 공세를 얹는다.
+# 145턴부터 후반 모드·F 증원(상한 8·최소 6)·목표 위험 무시. 우리 막판 대응(eg_def 등) 실험용.
+_EG_PUSH = {"endgame_turn": 145, "eg_f_turn": 145, "eg_max_f": 8, "eg_min_f": 6, "eg_risk_scale": 0.0}
+EG22 = []
+for _n in MIMIC.get("mc22", []):
+    _b, _p = OPPS[_n]
+    OPPS["eg" + _n[2:]] = (_b, dict(_p, **_EG_PUSH))
+    EG22.append("eg" + _n[2:])

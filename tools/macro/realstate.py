@@ -133,8 +133,12 @@ def job(args):
         return None
     s, me, _ = rs
     out, ecos = [], []
+    if proxy.startswith("SELF"):
+        # 그 경기 상대 팀의 흉내 봇(SELF = mc22_<상대>, SELF:eg = eg22_<상대>)
+        nm = "".join(ch for ch in os.path.basename(path)[:-5].removeprefix("vs") if ch.isalnum())
+        proxy = ("eg22_" if proxy == "SELF:eg" else "mc22_") + nm
     for ver, params in zip(vers, (pa, pb)):
-        g, eco = play_track(s, me, Agent(ver, params), Agent(*OPPS[proxy]))
+        g, eco = play_track(s, me, Agent(ver, params), Agent(*OPPS[proxy]) if proxy in OPPS else Agent(proxy))
         assert not sum(agent.errors for agent in g.agents.values()), (path, t, proxy, ver)
         out.append(value(g.result, me))
         ecos.append(eco)
